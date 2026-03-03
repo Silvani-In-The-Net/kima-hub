@@ -609,12 +609,22 @@ export function FullPlayer() {
         {showPlaylistSelector && currentTrack && (
             <PlaylistSelector
                 isOpen={showPlaylistSelector}
-                onSelectPlaylist={async (playlistId) => {
+                mode="multi"
+                onSelectPlaylists={async (playlistIds) => {
                     try {
-                        await addToPlaylist({ playlistId, trackId: currentTrack.id });
+                        let added = 0;
+                        for (const playlistId of playlistIds) {
+                            const result = await addToPlaylist({ playlistId, trackId: currentTrack.id });
+                            if (!result.duplicated) added++;
+                        }
+                        toast.success(
+                            added > 0
+                                ? `Added to ${added} playlist${added > 1 ? "s" : ""}`
+                                : "Already in selected playlists"
+                        );
                         setShowPlaylistSelector(false);
                     } catch {
-                        toast.error("Failed to add to playlist");
+                        toast.error("Failed to add to playlists");
                     }
                 }}
                 onClose={() => setShowPlaylistSelector(false)}
