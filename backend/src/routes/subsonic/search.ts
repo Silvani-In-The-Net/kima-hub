@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../utils/db";
-import { subsonicOk } from "../../utils/subsonicResponse";
+import { subsonicOk, subsonicError, SubsonicError } from "../../utils/subsonicResponse";
 import { searchService } from "../../services/search";
 import { wrap, clamp, parseIntParam, firstArtistGenre } from "./mappers";
 
@@ -187,5 +187,74 @@ searchRouter.all("/getRandomSongs.view", wrap(async (req, res) => {
 
     return subsonicOk(req, res, {
         randomSongs: songs.length > 0 ? { song: songs } : {},
+    });
+}));
+
+// ===================== SONGS BY GENRE =====================
+
+searchRouter.all("/getSongsByGenre.view", wrap(async (req, res) => {
+    const genre = req.query.genre as string | undefined;
+    if (!genre) {
+        return subsonicError(req, res, SubsonicError.MISSING_PARAM, "Required parameter is missing: genre");
+    }
+
+    const count = clamp(parseIntParam(req.query.count as string | undefined, 10), 1, 500);
+    const offset = Math.max(0, parseIntParam(req.query.offset as string | undefined, 0));
+
+    const rows = await prisma.$queryRaw<{
+        id: string;
+        title: string;
+        trackNo: number | null;
+        duration: number | null;
+        mime: string | null;
+        fileSize: number | null;
+        albumId: string;
+        albumTitle: string;
+        albumDisplayTitle: string | null;
+        albumYear: number | null;
+        artistId: string;
+        artistName: string;
+        artistDisplayName: string | null;
+        artistGenres: unknown;
+        artistUserGenres: unknown;
+    }[]>`
+        SELECT t.id, t.title, t."trackNo", t.duration, t.mime, t."fileSize",
+               al.id AS "albumId", al.title AS "albumTitle", al."displayTitle" AS "albumDisplayTitle",
+               al.year AS "albumYear",
+               ar.id AS "artistId", ar.name AS "artistName", ar."displayName" AS "artistDisplayName",
+               ar.genres AS "artistGenres", ar."userGenres" AS "artistUserGenres"
+        FROM "Track" t
+        JOIN "Album" al ON t."albumId" = al.id
+        JOIN "Artist" ar ON al."artistId" = ar.id
+        WHERE t.corrupt = false
+          AND al.location = 'LIBRARY'
+          AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(
+                COALESCE(NULLIF(NULLIF(ar."userGenres", 'null'::jsonb), '[]'::jsonb), ar.genres)
+            ) g WHERE g ILIKE ${"%" + genre + "%"}
+          )
+        ORDER BY ar.name ASC, al.title ASC, t."trackNo" ASC
+        LIMIT ${count} OFFSET ${offset}
+    `;
+
+    const songs = rows.map((r) => ({
+        "@_id": r.id,
+        "@_title": r.title,
+        "@_album": r.albumDisplayTitle || r.albumTitle,
+        "@_artist": r.artistDisplayName || r.artistName,
+        "@_artistId": r.artistId,
+        "@_albumId": r.albumId,
+        "@_coverArt": r.albumId,
+        "@_duration": r.duration ? Math.round(r.duration) : 0,
+        "@_track": r.trackNo || undefined,
+        "@_year": r.albumYear || undefined,
+        "@_contentType": r.mime || "audio/mpeg",
+        "@_size": r.fileSize ?? undefined,
+        "@_type": "music",
+        "@_genre": firstArtistGenre(r.artistGenres, r.artistUserGenres) || undefined,
+    }));
+
+    return subsonicOk(req, res, {
+        songsByGenre: songs.length > 0 ? { song: songs } : {},
     });
 }));
