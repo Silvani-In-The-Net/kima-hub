@@ -840,6 +840,67 @@ class MusicBrainzService {
             }
         });
     }
+
+    /**
+     * Look up a recording by ISRC code.
+     * Returns the recording MBID and basic metadata, or null if not found.
+     */
+    async lookupByIsrc(isrc: string): Promise<{
+        recordingId: string;
+        title: string;
+        artistName: string;
+        artistMbid: string;
+    } | null> {
+        const cacheKey = `mb:isrc:${isrc}`;
+        return this.cachedRequest(cacheKey, async () => {
+            try {
+                const response = await this.rateLimitedGet(`/isrc/${isrc}`, {
+                    params: { fmt: "json" },
+                });
+                const recordings = response.data.recordings || [];
+                if (recordings.length === 0) return null;
+
+                const rec = recordings[0];
+                const artistCredit = rec["artist-credit"]?.[0];
+                return {
+                    recordingId: rec.id,
+                    title: rec.title,
+                    artistName: artistCredit?.name || artistCredit?.artist?.name || "",
+                    artistMbid: artistCredit?.artist?.id || "",
+                };
+            } catch (err: any) {
+                if (err.response?.status === 404) return null;
+                logger.warn(`MusicBrainz ISRC lookup failed for ${isrc}:`, err.message);
+                return null;
+            }
+        });
+    }
+
+    /**
+     * Fetch genres and tags for a recording.
+     * Genres are curated (MusicBrainz editorial); tags are crowd-sourced (includes mood descriptors).
+     */
+    async getRecordingGenres(recordingId: string): Promise<{
+        genres: Array<{ name: string; count: number }>;
+        tags: Array<{ name: string; count: number }>;
+    } | null> {
+        const cacheKey = `mb:recording:genres:${recordingId}`;
+        return this.cachedRequest(cacheKey, async () => {
+            try {
+                const response = await this.rateLimitedGet(`/recording/${recordingId}`, {
+                    params: { fmt: "json", inc: "genres+tags" },
+                });
+                const data = response.data;
+                return {
+                    genres: (data.genres || []).map((g: any) => ({ name: g.name, count: g.count })),
+                    tags: (data.tags || []).map((t: any) => ({ name: t.name, count: t.count })),
+                };
+            } catch (err: any) {
+                logger.warn(`MusicBrainz recording genres failed for ${recordingId}:`, err.message);
+                return null;
+            }
+        });
+    }
 }
 
 export const musicBrainzService = new MusicBrainzService();
