@@ -616,6 +616,14 @@ export default function BrowsePlaylistsPage() {
                                         Apple
                                     </span>
                                 </div>
+                                <div className="flex items-center gap-2 px-2.5 py-1 bg-white/5 rounded border border-white/10">
+                                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-white/70" fill="currentColor">
+                                        <path d="M12.012 3.992L8.008 7.996 4.004 3.992 0 7.996l4.004 4.004L0 16.004 4.004 20.008l4.004-4.004 4.004 4.004 4.004-4.004-4.004-4.004 4.004-4.004z" />
+                                    </svg>
+                                    <span className="text-[10px] font-black text-white/70 uppercase tracking-wider">
+                                        Tidal
+                                    </span>
+                                </div>
                                 <span className="text-[10px] font-mono text-white/20 ml-auto uppercase tracking-wider">
                                     Supported
                                 </span>
@@ -631,7 +639,7 @@ export default function BrowsePlaylistsPage() {
                                     onChange={(e) =>
                                         setUrlInput(e.target.value)
                                     }
-                                    placeholder="Paste Spotify, Deezer, YouTube, or Apple Music URL..."
+                                    placeholder="Paste Spotify, Deezer, YouTube, Apple Music, or Tidal URL..."
                                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-[#a855f7]/40 transition-all font-mono"
                                     onKeyDown={(e) =>
                                         e.key === "Enter" && handleUrlSubmit()
@@ -648,7 +656,6 @@ export default function BrowsePlaylistsPage() {
                                 )}
                             </div>
                             <p className="text-[10px] font-mono text-white/20 mt-2 ml-1 uppercase tracking-wider">
-                                Example:
                                 Example: https://open.spotify.com/playlist/... or YouTube/Apple Music URL
                             </p>
                         </div>
