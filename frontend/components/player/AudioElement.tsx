@@ -325,6 +325,8 @@ export const AudioElement = memo(function AudioElement() {
         const handlePlaying = () => {
             setIsBuffering(false);
             consecutiveErrorCountRef.current = 0;
+            // Next track is producing audio -- kill the silent bridge
+            audioEngine.stopSilentBridge();
             // If audio started playing while React state says we're paused
             // (e.g. direct tryResume() call from MediaSession handler bypassed the
             // React update chain), sync state back to playing so the UI reflects reality.
@@ -347,6 +349,7 @@ export const AudioElement = memo(function AudioElement() {
 
             // Handle what comes next
             if (playbackTypeRef.current === "podcast") {
+                audioEngine.startSilentBridge();
                 nextPodcastEpisodeRef.current();
             } else if (playbackTypeRef.current === "audiobook") {
                 pauseRef.current();
@@ -355,6 +358,11 @@ export const AudioElement = memo(function AudioElement() {
                     audioEngine.seek(0);
                     audioEngine.play();
                 } else {
+                    // Start silent bridge to keep the OS audio session alive during
+                    // the gap between tracks. Stops automatically when the next track
+                    // fires its "playing" event, or after 5s max.
+                    audioEngine.startSilentBridge();
+
                     // Load next track synchronously to avoid iOS reclaiming the audio
                     // session during silence. lastTrackIdRef is pre-set so the React
                     // track-change effect skips the duplicate load.
@@ -504,6 +512,9 @@ export const AudioElement = memo(function AudioElement() {
 
     useEffect(() => {
         if (isPlaying) {
+            // Acquire Web Lock to prevent OS from suspending the page
+            audioEngine.acquireWebLock();
+
             if (!audioEngine.hasAudio() && !audioEngine.getState().currentSrc) {
                 // No audio loaded - force reload by resetting track ref
                 lastTrackIdRef.current = null;
@@ -517,6 +528,8 @@ export const AudioElement = memo(function AudioElement() {
             });
         } else {
             audioEngine.pause();
+            // Release Web Lock -- page can be suspended now
+            audioEngine.releaseWebLock();
         }
     }, [isPlaying, setIsPlaying]);
 

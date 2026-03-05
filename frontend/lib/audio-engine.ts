@@ -36,6 +36,13 @@ class AudioEngine {
     private networkRetryTimeout: ReturnType<typeof setTimeout> | null = null;
     private retrySeekTime: number | null = null;
 
+    // Web Lock for background playback (prevents page suspension)
+    private webLockController: AbortController | null = null;
+
+    // Silent bridge for track transitions (keeps audio session alive on iOS)
+    private silentBridgeAudio: HTMLAudioElement | null = null;
+    private silentBridgeTimeout: ReturnType<typeof setTimeout> | null = null;
+
     // Preload for gapless playback
     private preloadAudio: HTMLAudioElement | null = null;
     private preloadSrc: string | null = null;
@@ -476,6 +483,8 @@ class AudioEngine {
         this.cancelPreload();
         this.stopTimeUpdates();
         this.cancelNetworkRetry();
+        this.releaseWebLock();
+        this.stopSilentBridge();
 
         if (this.audio) {
             this.audio.pause();
@@ -496,10 +505,91 @@ class AudioEngine {
     }
 
     /**
+     * Acquire a Web Lock to signal the browser that background work is active.
+     * Prevents page suspension on Chrome/Android. Safari 15.4+ supports this.
+     * The lock is held until releaseWebLock() is called (on pause/stop).
+     */
+    acquireWebLock(): void {
+        if (this.webLockController) return; // Already held
+        if (typeof navigator === "undefined" || !("locks" in navigator)) return;
+
+        this.webLockController = new AbortController();
+        navigator.locks.request(
+            "kima-audio-playback",
+            { signal: this.webLockController.signal },
+            () => new Promise<void>((resolve) => {
+                // This promise resolves when the AbortController is aborted,
+                // which releases the lock. The lock is held indefinitely until then.
+                this.webLockController?.signal.addEventListener("abort", () => resolve(), { once: true });
+            }),
+        ).catch(() => {
+            // Lock request was aborted (normal cleanup) or not supported
+        });
+    }
+
+    /**
+     * Release the Web Lock, allowing the browser to suspend the page if idle.
+     */
+    releaseWebLock(): void {
+        if (this.webLockController) {
+            this.webLockController.abort();
+            this.webLockController = null;
+        }
+    }
+
+    /**
+     * Start a silent audio bridge to keep the OS audio session alive during
+     * track transitions. Plays a tiny silent WAV (inline data URI) on a
+     * secondary audio element. Automatically stops after maxDuration ms
+     * or when stopSilentBridge() is called.
+     *
+     * This is NOT a keep-alive loop -- it fires once per track transition
+     * and self-terminates. Typical duration: <500ms until the next track loads.
+     */
+    startSilentBridge(maxDuration: number = 5000): void {
+        this.stopSilentBridge();
+
+        // 0.5s silent WAV (44100 Hz, 16-bit mono) as base64 data URI.
+        // Small enough to be inline, long enough to bridge most transitions.
+        // The audio element loops it until stopped or maxDuration expires.
+        const silentWav = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+
+        this.silentBridgeAudio = new Audio();
+        this.silentBridgeAudio.volume = 0;
+        this.silentBridgeAudio.loop = true;
+        this.silentBridgeAudio.src = silentWav;
+        this.silentBridgeAudio.play().catch(() => {
+            // Silent play failed (no gesture context) -- nothing we can do
+        });
+
+        this.silentBridgeTimeout = setTimeout(() => {
+            this.stopSilentBridge();
+        }, maxDuration);
+    }
+
+    /**
+     * Stop the silent audio bridge. Called when the next track starts playing.
+     */
+    stopSilentBridge(): void {
+        if (this.silentBridgeTimeout) {
+            clearTimeout(this.silentBridgeTimeout);
+            this.silentBridgeTimeout = null;
+        }
+        if (this.silentBridgeAudio) {
+            this.silentBridgeAudio.pause();
+            this.silentBridgeAudio.removeAttribute("src");
+            this.silentBridgeAudio.load();
+            this.silentBridgeAudio = null;
+        }
+    }
+
+    /**
      * Destroy the engine completely.
      */
     destroy(): void {
         this.cleanup();
+        this.releaseWebLock();
+        this.stopSilentBridge();
         this.detachNativeListeners();
         this.eventListeners.clear();
     }
