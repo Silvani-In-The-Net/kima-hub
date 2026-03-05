@@ -4285,4 +4285,46 @@ router.get("/radio", async (req, res) => {
   }
 });
 
+/**
+ * GET /library/corrupt-tracks
+ * Returns all tracks flagged as corrupt
+ */
+router.get("/corrupt-tracks", async (_req, res) => {
+  try {
+    const tracks = await prisma.track.findMany({
+      where: { corrupt: true },
+      include: { album: { include: { artist: { select: { name: true } } } } },
+      orderBy: { title: "asc" },
+    });
+
+    res.json({
+      count: tracks.length,
+      tracks: tracks.map((t) => ({
+        id: t.id,
+        title: t.title,
+        artist: t.album.artist.name,
+        album: t.album.title,
+        filePath: t.filePath,
+      })),
+    });
+  } catch (error) {
+    logger.error("Get corrupt tracks error:", error);
+    res.status(500).json({ error: "Failed to get corrupt tracks" });
+  }
+});
+
+/**
+ * DELETE /library/corrupt-tracks
+ * Removes all corrupt tracks from the database
+ */
+router.delete("/corrupt-tracks", async (_req, res) => {
+  try {
+    const result = await prisma.track.deleteMany({ where: { corrupt: true } });
+    res.json({ deleted: result.count, message: `Removed ${result.count} corrupt tracks` });
+  } catch (error) {
+    logger.error("Delete corrupt tracks error:", error);
+    res.status(500).json({ error: "Failed to delete corrupt tracks" });
+  }
+});
+
 export default router;

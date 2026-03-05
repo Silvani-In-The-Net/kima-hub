@@ -216,6 +216,7 @@ router.get("/:id", async (req, res) => {
                 title: pending.spotifyTitle,
                 album: pending.spotifyAlbum,
                 previewUrl: pending.deezerPreviewUrl,
+                missingFromDisk: pending.missingFromDisk,
             },
         }));
 

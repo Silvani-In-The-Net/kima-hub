@@ -1764,6 +1764,26 @@ class ApiClient {
 
         return response.json();
     }
+    // Corrupt tracks
+    async getCorruptTracks() {
+        return this.request<{
+            count: number;
+            tracks: Array<{
+                id: string;
+                title: string;
+                artist: string;
+                album: string;
+                filePath: string;
+            }>;
+        }>("/library/corrupt-tracks");
+    }
+
+    async deleteCorruptTracks() {
+        return this.request<{ deleted: number; message: string }>(
+            "/library/corrupt-tracks",
+            { method: "DELETE" }
+        );
+    }
 }
 
 // Create a singleton instance without passing baseUrl - it will be determined dynamically

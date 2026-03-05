@@ -36,6 +36,7 @@ import {
     Link as LinkIcon,
     Globe,
     Lock,
+    FileX,
 } from "lucide-react";
 import { useTrackFormat } from "@/hooks/useTrackFormat";
 import { formatTrackDisplay } from "@/lib/track-format";
@@ -73,6 +74,7 @@ interface PendingTrack {
         title: string;
         album: string;
         previewUrl: string | null;
+        missingFromDisk?: boolean;
     };
 }
 
@@ -892,6 +894,7 @@ export default function PlaylistDetailPage() {
                                             const isPreviewPlaying = playingPreviewId === pending.id;
                                             const isRetrying = retryingTrackId === pending.id;
                                             const isRemoving = removingTrackId === pending.id;
+                                            const isMissing = pending.missingFromDisk === true;
 
                                             return (
                                                 <div
@@ -899,7 +902,11 @@ export default function PlaylistDetailPage() {
                                                     className="grid grid-cols-[40px_1fr_auto] md:grid-cols-[40px_minmax(200px,4fr)_minmax(100px,1fr)_120px] gap-4 px-4 py-2 rounded-lg opacity-60 hover:opacity-80 group transition-opacity"
                                                 >
                                                     <div className="flex items-center justify-center">
-                                                        <AlertCircle className="w-4 h-4 text-red-400" />
+                                                        {isMissing ? (
+                                                            <FileX className="w-4 h-4 text-amber-400" />
+                                                        ) : (
+                                                            <AlertCircle className="w-4 h-4 text-red-400" />
+                                                        )}
                                                     </div>
 
                                                     <div className="flex items-center gap-3 min-w-0">
@@ -931,29 +938,34 @@ export default function PlaylistDetailPage() {
                                                     </p>
 
                                                     <div className="flex items-center justify-end gap-1">
-                                                        <span className="text-[10px] font-mono text-red-400 mr-2 hidden sm:inline uppercase tracking-wider">
-                                                            Failed
+                                                        <span className={cn(
+                                                            "text-[10px] font-mono mr-2 hidden sm:inline uppercase tracking-wider",
+                                                            isMissing ? "text-amber-400" : "text-red-400"
+                                                        )}>
+                                                            {isMissing ? "Missing from disk" : "Failed"}
                                                         </span>
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleRetryPendingTrack(pending.id);
-                                                            }}
-                                                            disabled={isRetrying}
-                                                            className={cn(
-                                                                "p-1.5 rounded-lg hover:bg-white/10 transition-all",
-                                                                isRetrying
-                                                                    ? "text-[#fca208]"
-                                                                    : "text-white/30 hover:text-white/60"
-                                                            )}
-                                                            title="Retry download"
-                                                        >
-                                                            {isRetrying ? (
-                                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                            ) : (
-                                                                <RefreshCw className="w-4 h-4" />
-                                                            )}
-                                                        </button>
+                                                        {!isMissing && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleRetryPendingTrack(pending.id);
+                                                                }}
+                                                                disabled={isRetrying}
+                                                                className={cn(
+                                                                    "p-1.5 rounded-lg hover:bg-white/10 transition-all",
+                                                                    isRetrying
+                                                                        ? "text-[#fca208]"
+                                                                        : "text-white/30 hover:text-white/60"
+                                                                )}
+                                                                title="Retry download"
+                                                            >
+                                                                {isRetrying ? (
+                                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                                ) : (
+                                                                    <RefreshCw className="w-4 h-4" />
+                                                                )}
+                                                            </button>
+                                                        )}
                                                         {playlist.isOwner && (
                                                             <button
                                                                 onClick={(e) => {

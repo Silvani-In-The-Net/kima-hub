@@ -25,6 +25,7 @@ import { AIServicesSection } from "@/features/settings/components/sections/AISer
 import { StoragePathsSection } from "@/features/settings/components/sections/StoragePathsSection";
 import { CacheSection } from "@/features/settings/components/sections/CacheSection";
 import { UserManagementSection } from "@/features/settings/components/sections/UserManagementSection";
+import { CorruptTracksSection } from "@/features/settings/components/sections/CorruptTracksSection";
 
 // Define sidebar items
 const sidebarItems: SidebarItem[] = [
@@ -38,6 +39,7 @@ const sidebarItems: SidebarItem[] = [
     { id: "ai-services", label: "Artwork", adminOnly: true },
     { id: "storage", label: "Storage", adminOnly: true },
     { id: "cache", label: "Cache & Automation", adminOnly: true },
+    { id: "corrupt-tracks", label: "Corrupt Tracks", adminOnly: true },
     { id: "users", label: "Users", adminOnly: true },
 ];
 
@@ -208,6 +210,9 @@ export default function SettingsPage() {
                             settings={systemSettings}
                             onUpdate={updateSystemSettings}
                         />
+
+                        {/* Corrupt Tracks */}
+                        <CorruptTracksSection />
 
                         {/* User Management */}
                         <UserManagementSection />
