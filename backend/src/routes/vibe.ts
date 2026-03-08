@@ -1,13 +1,12 @@
 import { Router } from "express";
-import { randomUUID } from "crypto";
 import { logger } from "../utils/logger";
 import { prisma } from "../utils/db";
-import { redisClient } from "../utils/redis";
 import { requireAuth } from "../middleware/auth";
 import { findSimilarTracks } from "../services/hybridSimilarity";
 import { computeMapProjection } from "../services/umapProjection";
 import { generateSongPath } from "../services/songPath";
 import { parseEmbedding } from "../utils/embedding";
+import { getTextEmbedding } from "../services/textEmbeddingBridge";
 import {
     getVocabulary,
     expandQueryWithVocabulary,
@@ -310,158 +309,105 @@ router.post("/search", requireAuth, async (req, res) => {
         // similarity = 1 - (distance / 2), so distance = 2 * (1 - similarity)
         const maxDistance = 2 * (1 - similarityThreshold);
 
-        const requestId = randomUUID();
-        const responseChannel = `audio:text:embed:response:${requestId}`;
-        const requestChannel = "audio:text:embed";
+        const textEmbedding = await getTextEmbedding(query.trim());
 
-        // Create a duplicate client for subscribing (redis client cannot subscribe and publish on same connection)
-        const subscriber = redisClient.duplicate();
-        await subscriber.connect();
+        const vocab = getVocabulary();
+        let searchEmbedding = textEmbedding;
+        let genreConfidence = 0;
+        let matchedTerms: VocabTerm[] = [];
 
-        try {
-            // Set up response handling
-            let resolveEmbedding: (value: number[]) => void;
-            let rejectEmbedding: (reason: Error) => void;
-            const embeddingPromise = new Promise<number[]>((resolve, reject) => {
-                resolveEmbedding = resolve;
-                rejectEmbedding = reject;
-            });
+        if (vocab) {
+            const expansion = expandQueryWithVocabulary(textEmbedding, query.trim(), vocab);
+            searchEmbedding = expansion.embedding;
+            genreConfidence = expansion.genreConfidence;
+            matchedTerms = expansion.matchedTerms;
 
-            const timeout = setTimeout(() => {
-                rejectEmbedding!(new Error("Text embedding request timed out"));
-            }, 60000);
-
-            // Subscribe and wait for Redis to confirm before publishing
-            await subscriber.subscribe(responseChannel, (message) => {
-                clearTimeout(timeout);
-                try {
-                    const data = JSON.parse(message);
-                    if (data.error) {
-                        rejectEmbedding!(new Error(data.error));
-                    } else {
-                        resolveEmbedding!(data.embedding);
-                    }
-                } catch (e) {
-                    rejectEmbedding!(new Error("Invalid response from analyzer"));
-                }
-            });
-
-            // Publish the text embedding request
-            await redisClient.publish(
-                requestChannel,
-                JSON.stringify({ requestId, text: query.trim() })
-            );
-
-            // Wait for embedding response
-            const textEmbedding = await embeddingPromise;
-
-            // Query expansion with vocabulary
-            const vocab = getVocabulary();
-            let searchEmbedding = textEmbedding;
-            let genreConfidence = 0;
-            let matchedTerms: VocabTerm[] = [];
-
-            if (vocab) {
-                const expansion = expandQueryWithVocabulary(textEmbedding, query.trim(), vocab);
-                searchEmbedding = expansion.embedding;
-                genreConfidence = expansion.genreConfidence;
-                matchedTerms = expansion.matchedTerms;
-
-                logger.info(`[VIBE-SEARCH] Query "${query.trim()}" expanded with terms: ${matchedTerms.map(t => t.name).join(", ") || "none"}, genre confidence: ${(genreConfidence * 100).toFixed(0)}%`);
-            }
-
-            // Query for similar tracks using the (possibly expanded) embedding
-            // Fetch more candidates for re-ranking (3x limit)
-            // Filter by max distance to exclude poor matches
-            const similarTracks = await prisma.$queryRaw<TextSearchResult[]>`
-                SELECT
-                    t.id,
-                    t.title,
-                    t.duration,
-                    t."trackNo",
-                    te.embedding <=> ${searchEmbedding}::vector AS distance,
-                    a.id as "albumId",
-                    a.title as "albumTitle",
-                    a."coverUrl" as "albumCoverUrl",
-                    ar.id as "artistId",
-                    ar.name as "artistName",
-                    t.energy,
-                    t.valence,
-                    t."danceabilityMl" as danceability,
-                    t.acousticness,
-                    t.instrumentalness,
-                    t.arousal,
-                    t."moodHappy",
-                    t."moodSad",
-                    t."moodRelaxed",
-                    t."moodAggressive",
-                    t."moodParty",
-                    t."moodAcoustic",
-                    t."moodElectronic"
-                FROM track_embeddings te
-                JOIN "Track" t ON te.track_id = t.id
-                JOIN "Album" a ON t."albumId" = a.id
-                JOIN "Artist" ar ON a."artistId" = ar.id
-                WHERE te.embedding <=> ${searchEmbedding}::vector <= ${maxDistance}
-                ORDER BY te.embedding <=> ${searchEmbedding}::vector
-                LIMIT ${limit * 3}
-            `;
-
-            logger.info(`Vibe search "${query.trim()}": found ${similarTracks.length} candidates above ${Math.round(similarityThreshold * 100)}% similarity (max distance: ${maxDistance.toFixed(2)})`);
-
-            // Re-rank using audio features if we have vocabulary matches
-            let rankedTracks: typeof similarTracks | ReturnType<typeof rerankWithFeatures<TextSearchResult>> = similarTracks;
-            if (vocab && matchedTerms.length > 0) {
-                const reranked = rerankWithFeatures(similarTracks, matchedTerms, genreConfidence);
-                rankedTracks = reranked.slice(0, limit);
-
-                logger.info(`[VIBE-SEARCH] Re-ranked ${similarTracks.length} candidates, top result: ${rankedTracks[0]?.title || "none"}`);
-            } else {
-                rankedTracks = similarTracks.slice(0, limit);
-            }
-
-            // If we have results, log the similarity range
-            if (rankedTracks.length > 0) {
-                const first = rankedTracks[0];
-                const last = rankedTracks[rankedTracks.length - 1];
-                const bestSim = "finalScore" in first ? first.finalScore : distanceToSimilarity(first.distance);
-                const worstSim = "finalScore" in last ? last.finalScore : distanceToSimilarity(last.distance);
-                logger.info(`Vibe search similarity range: ${Math.round(bestSim * 100)}% - ${Math.round(worstSim * 100)}%`);
-            }
-
-            const tracks = rankedTracks.map((row) => ({
-                id: row.id,
-                title: row.title,
-                duration: row.duration,
-                trackNo: row.trackNo,
-                distance: row.distance,
-                similarity: "finalScore" in row ? row.finalScore : distanceToSimilarity(row.distance),
-                album: {
-                    id: row.albumId,
-                    title: row.albumTitle,
-                    coverUrl: row.albumCoverUrl,
-                },
-                artist: {
-                    id: row.artistId,
-                    name: row.artistName,
-                },
-            }));
-
-            res.json({
-                query: query.trim(),
-                tracks,
-                minSimilarity: similarityThreshold,
-                totalAboveThreshold: tracks.length,
-                debug: {
-                    matchedTerms: matchedTerms.map(t => t.name),
-                    genreConfidence,
-                    featureWeight: matchedTerms.length > 0 ? 0.2 + (genreConfidence * 0.5) : 0
-                }
-            });
-        } finally {
-            await subscriber.unsubscribe(responseChannel);
-            await subscriber.disconnect();
+            logger.info(`[VIBE-SEARCH] Query "${query.trim()}" expanded with terms: ${matchedTerms.map(t => t.name).join(", ") || "none"}, genre confidence: ${(genreConfidence * 100).toFixed(0)}%`);
         }
+
+        const similarTracks = await prisma.$queryRaw<TextSearchResult[]>`
+            SELECT
+                t.id,
+                t.title,
+                t.duration,
+                t."trackNo",
+                te.embedding <=> ${searchEmbedding}::vector AS distance,
+                a.id as "albumId",
+                a.title as "albumTitle",
+                a."coverUrl" as "albumCoverUrl",
+                ar.id as "artistId",
+                ar.name as "artistName",
+                t.energy,
+                t.valence,
+                t."danceabilityMl" as danceability,
+                t.acousticness,
+                t.instrumentalness,
+                t.arousal,
+                t."moodHappy",
+                t."moodSad",
+                t."moodRelaxed",
+                t."moodAggressive",
+                t."moodParty",
+                t."moodAcoustic",
+                t."moodElectronic"
+            FROM track_embeddings te
+            JOIN "Track" t ON te.track_id = t.id
+            JOIN "Album" a ON t."albumId" = a.id
+            JOIN "Artist" ar ON a."artistId" = ar.id
+            WHERE te.embedding <=> ${searchEmbedding}::vector <= ${maxDistance}
+            ORDER BY te.embedding <=> ${searchEmbedding}::vector
+            LIMIT ${limit * 3}
+        `;
+
+        logger.info(`Vibe search "${query.trim()}": found ${similarTracks.length} candidates above ${Math.round(similarityThreshold * 100)}% similarity (max distance: ${maxDistance.toFixed(2)})`);
+
+        let rankedTracks: typeof similarTracks | ReturnType<typeof rerankWithFeatures<TextSearchResult>> = similarTracks;
+        if (vocab && matchedTerms.length > 0) {
+            const reranked = rerankWithFeatures(similarTracks, matchedTerms, genreConfidence);
+            rankedTracks = reranked.slice(0, limit);
+
+            logger.info(`[VIBE-SEARCH] Re-ranked ${similarTracks.length} candidates, top result: ${rankedTracks[0]?.title || "none"}`);
+        } else {
+            rankedTracks = similarTracks.slice(0, limit);
+        }
+
+        if (rankedTracks.length > 0) {
+            const first = rankedTracks[0];
+            const last = rankedTracks[rankedTracks.length - 1];
+            const bestSim = "finalScore" in first ? first.finalScore : distanceToSimilarity(first.distance);
+            const worstSim = "finalScore" in last ? last.finalScore : distanceToSimilarity(last.distance);
+            logger.info(`Vibe search similarity range: ${Math.round(bestSim * 100)}% - ${Math.round(worstSim * 100)}%`);
+        }
+
+        const tracks = rankedTracks.map((row) => ({
+            id: row.id,
+            title: row.title,
+            duration: row.duration,
+            trackNo: row.trackNo,
+            distance: row.distance,
+            similarity: "finalScore" in row ? row.finalScore : distanceToSimilarity(row.distance),
+            album: {
+                id: row.albumId,
+                title: row.albumTitle,
+                coverUrl: row.albumCoverUrl,
+            },
+            artist: {
+                id: row.artistId,
+                name: row.artistName,
+            },
+        }));
+
+        res.json({
+            query: query.trim(),
+            tracks,
+            minSimilarity: similarityThreshold,
+            totalAboveThreshold: tracks.length,
+            debug: {
+                matchedTerms: matchedTerms.map(t => t.name),
+                genreConfidence,
+                featureWeight: matchedTerms.length > 0 ? 0.2 + (genreConfidence * 0.5) : 0
+            }
+        });
     } catch (error: any) {
         logger.error("Vibe text search error:", error);
         if (error.message?.includes("timed out")) {

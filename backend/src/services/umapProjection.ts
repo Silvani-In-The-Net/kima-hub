@@ -1,10 +1,12 @@
-import { UMAP } from "umap-js";
+import path from "path";
+import { Worker } from "worker_threads";
 import { prisma } from "../utils/db";
 import { redisClient } from "../utils/redis";
 import { logger } from "../utils/logger";
 import { parseEmbedding } from "../utils/embedding";
 
 const MIN_TRACKS_FOR_UMAP = 5;
+const MAX_EMBEDDINGS = 15000;
 
 interface MapTrack {
     id: string;
@@ -24,6 +26,7 @@ interface MapTrack {
 interface MapResponse {
     tracks: MapTrack[];
     trackCount: number;
+    sampled?: boolean;
     computedAt: string;
 }
 
@@ -43,24 +46,53 @@ function getDominantMood(track: Record<string, number | null>): { mood: string; 
     return best;
 }
 
-export async function computeMapProjection(): Promise<MapResponse> {
-    const embeddedCount = await prisma.$queryRaw<{ count: bigint }[]>`
-        SELECT COUNT(*) as count FROM track_embeddings
-    `;
-    const count = Number(embeddedCount[0]?.count || 0);
+function runUmapInWorker(embeddings: number[][], nNeighbors: number): Promise<number[][]> {
+    return new Promise((resolve, reject) => {
+        const worker = new Worker(path.join(__dirname, "../workers/umapWorker.js"), {
+            workerData: { embeddings, nNeighbors },
+        });
+        worker.on("message", resolve);
+        worker.on("error", reject);
+        worker.on("exit", (code) => {
+            if (code !== 0) reject(new Error(`UMAP worker exited with code ${code}`));
+        });
+    });
+}
 
-    if (count === 0) {
+let computePromise: Promise<MapResponse> | null = null;
+
+export async function computeMapProjection(): Promise<MapResponse> {
+    const trackIdHash = await prisma.$queryRaw<{ hash: string }[]>`
+        SELECT md5(string_agg(track_id, ',' ORDER BY track_id)) as hash
+        FROM track_embeddings
+    `;
+    const hash = trackIdHash[0]?.hash || "empty";
+
+    if (hash === "empty") {
         return { tracks: [], trackCount: 0, computedAt: new Date().toISOString() };
     }
 
-    const cacheKey = `vibe:map:v1:${count}`;
+    const cacheKey = `vibe:map:v2:${hash}`;
     const cached = await redisClient.get(cacheKey);
     if (cached) {
-        logger.debug(`[VIBE-MAP] Cache hit for ${count} tracks`);
+        logger.debug(`[VIBE-MAP] Cache hit (hash=${hash.slice(0, 8)})`);
         return JSON.parse(cached);
     }
 
-    logger.info(`[VIBE-MAP] Computing UMAP projection for ${count} tracks...`);
+    if (computePromise) {
+        logger.info("[VIBE-MAP] Waiting for in-progress computation");
+        return computePromise;
+    }
+
+    computePromise = doCompute(cacheKey);
+    try {
+        return await computePromise;
+    } finally {
+        computePromise = null;
+    }
+}
+
+async function doCompute(cacheKey: string): Promise<MapResponse> {
     const startTime = Date.now();
 
     const rows = await prisma.$queryRaw<Array<{
@@ -102,11 +134,16 @@ export async function computeMapProjection(): Promise<MapResponse> {
         JOIN "Track" t ON te.track_id = t.id
         JOIN "Album" a ON t."albumId" = a.id
         JOIN "Artist" ar ON a."artistId" = ar.id
+        ORDER BY RANDOM()
+        LIMIT ${MAX_EMBEDDINGS}
     `;
 
+    const sampled = rows.length === MAX_EMBEDDINGS;
+
+    logger.info(`[VIBE-MAP] Computing UMAP projection for ${rows.length} tracks${sampled ? " (sampled)" : ""}...`);
+
     if (rows.length < MIN_TRACKS_FOR_UMAP) {
-        // Too few tracks for meaningful UMAP -- place in a simple grid
-        const result: MapResponse = {
+        return {
             tracks: rows.map((r, i) => {
                 const dominant = getDominantMood(r as any);
                 const angle = (2 * Math.PI * i) / rows.length;
@@ -123,20 +160,12 @@ export async function computeMapProjection(): Promise<MapResponse> {
             trackCount: rows.length,
             computedAt: new Date().toISOString(),
         };
-        return result;
     }
 
     const embeddings: number[][] = rows.map(r => parseEmbedding(r.embedding));
+    const nNeighbors = Math.min(15, Math.max(2, Math.floor(rows.length / 2)));
 
-    // Run UMAP: 512-dim -> 2-dim
-    const umap = new UMAP({
-        nComponents: 2,
-        nNeighbors: Math.min(15, Math.max(2, Math.floor(rows.length / 2))),
-        minDist: 0.1,
-        spread: 1.0,
-    });
-
-    const projection = umap.fit(embeddings);
+    const projection = await runUmapInWorker(embeddings, nNeighbors);
 
     // Normalize to 0-1 range
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -170,10 +199,10 @@ export async function computeMapProjection(): Promise<MapResponse> {
     const result: MapResponse = {
         tracks,
         trackCount: tracks.length,
+        ...(sampled && { sampled: true }),
         computedAt: new Date().toISOString(),
     };
 
-    // Cache for 24 hours -- non-fatal if Redis is down
     try {
         await redisClient.setEx(cacheKey, 86400, JSON.stringify(result));
     } catch (e) {

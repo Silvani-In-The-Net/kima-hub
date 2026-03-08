@@ -73,75 +73,58 @@ export async function generateSongPath(
 
     logger.info(`[SONG-PATH] Generating ${mode} path: ${numWaypoints} waypoints, distance=${distance.toFixed(3)}`);
 
+    const waypoints: number[][] = [];
+    for (let i = 1; i <= numWaypoints; i++) {
+        waypoints.push(interpolateEmbeddings(startEmb, endEmb, i / (numWaypoints + 1)));
+    }
+
+    const BATCH_SIZE = 10;
+    const candidateLimit = mode === "discovery" ? 10 : 8;
     const visitedIds = new Set<string>([startTrackId, endTrackId]);
     const path: PathTrack[] = [];
     let totalStepSize = 0;
 
-    for (let i = 1; i <= numWaypoints; i++) {
-        const t = i / (numWaypoints + 1);
-        const interpolated = interpolateEmbeddings(startEmb, endEmb, t);
+    for (let batchStart = 0; batchStart < waypoints.length; batchStart += BATCH_SIZE) {
+        const batch = waypoints.slice(batchStart, Math.min(batchStart + BATCH_SIZE, waypoints.length));
+        const candidates = await fetchBatchCandidates(batch, visitedIds, candidateLimit);
 
-        const pickIndex = mode === "discovery" ? Math.floor(Math.random() * 3) : 0;
-        const candidateLimit = mode === "discovery" ? 5 : 3;
+        for (let i = 0; i < batch.length; i++) {
+            const waypointCandidates = candidates
+                .filter(c => c.waypointIndex === i && !visitedIds.has(c.id))
+                .sort((a, b) => a.distance - b.distance);
 
-        const candidates = await prisma.$queryRaw<Array<{
-            id: string;
-            title: string;
-            duration: number;
-            albumId: string;
-            albumTitle: string;
-            albumCoverUrl: string | null;
-            artistId: string;
-            artistName: string;
-            distance: number;
-        }>>`
-            SELECT
-                t.id,
-                t.title,
-                t.duration,
-                a.id as "albumId",
-                a.title as "albumTitle",
-                a."coverUrl" as "albumCoverUrl",
-                ar.id as "artistId",
-                ar.name as "artistName",
-                te.embedding <=> ${interpolated}::vector AS distance
-            FROM track_embeddings te
-            JOIN "Track" t ON te.track_id = t.id
-            JOIN "Album" a ON t."albumId" = a.id
-            JOIN "Artist" ar ON a."artistId" = ar.id
-            WHERE te.track_id != ALL(${Array.from(visitedIds)})
-            ORDER BY te.embedding <=> ${interpolated}::vector
-            LIMIT ${candidateLimit + 5}
-        `;
+            if (waypointCandidates.length === 0) continue;
 
-        if (candidates.length === 0) break;
+            const pickIndex = mode === "discovery"
+                ? Math.floor(Math.random() * Math.min(3, waypointCandidates.length))
+                : 0;
+            let selected = waypointCandidates[pickIndex];
 
-        let selected = candidates[Math.min(pickIndex, candidates.length - 1)];
-
-        if (path.length >= 2) {
-            const prev1 = path[path.length - 1];
-            const prev2 = path[path.length - 2];
-            if (prev1.artistId === prev2.artistId && selected.artistId === prev1.artistId) {
-                const threshold = candidates[0].distance * 1.05;
-                const alt = candidates.find(
-                    c => c.artistId !== prev1.artistId && c.distance <= threshold
-                );
-                if (alt) selected = alt;
+            if (path.length >= 2) {
+                const prev1 = path[path.length - 1];
+                const prev2 = path[path.length - 2];
+                if (prev1.artistId === prev2.artistId && selected.artistId === prev1.artistId) {
+                    const threshold = waypointCandidates[0].distance * 1.05;
+                    const alt = waypointCandidates.find(
+                        c => c.artistId !== prev1.artistId && c.distance <= threshold && !visitedIds.has(c.id)
+                    );
+                    if (alt) selected = alt;
+                }
             }
-        }
 
-        visitedIds.add(selected.id);
-        totalStepSize += selected.distance;
-        path.push({
-            id: selected.id,
-            title: selected.title,
-            duration: selected.duration,
-            albumId: selected.albumId,
-            albumTitle: selected.albumTitle,
-            albumCoverUrl: selected.albumCoverUrl,
-            artistId: selected.artistId,
-            artistName: selected.artistName,
-        });
+            visitedIds.add(selected.id);
+            totalStepSize += selected.distance;
+            path.push({
+                id: selected.id,
+                title: selected.title,
+                duration: selected.duration,
+                albumId: selected.albumId,
+                albumTitle: selected.albumTitle,
+                albumCoverUrl: selected.albumCoverUrl,
+                artistId: selected.artistId,
+                artistName: selected.artistName,
+            });
+        }
     }
 
     return {
@@ -155,6 +138,46 @@ export async function generateSongPath(
             mode,
         },
     };
+}
+
+interface CandidateTrack extends PathTrack {
+    waypointIndex: number;
+    distance: number;
+}
+
+async function fetchBatchCandidates(
+    waypoints: number[][],
+    excludeIds: Set<string>,
+    candidatesPerWaypoint: number
+): Promise<CandidateTrack[]> {
+    const excluded = Array.from(excludeIds);
+
+    const promises = waypoints.map((emb, idx) =>
+        prisma.$queryRaw<Array<PathTrack & { distance: number }>>`
+            SELECT
+                t.id,
+                t.title,
+                t.duration,
+                a.id as "albumId",
+                a.title as "albumTitle",
+                a."coverUrl" as "albumCoverUrl",
+                ar.id as "artistId",
+                ar.name as "artistName",
+                te.embedding <=> ${emb}::vector AS distance
+            FROM track_embeddings te
+            JOIN "Track" t ON te.track_id = t.id
+            JOIN "Album" a ON t."albumId" = a.id
+            JOIN "Artist" ar ON a."artistId" = ar.id
+            WHERE te.track_id != ALL(${excluded})
+            ORDER BY te.embedding <=> ${emb}::vector
+            LIMIT ${candidatesPerWaypoint}
+        `.then(rows => rows.map(r => ({ ...r, waypointIndex: idx })))
+    );
+
+    const batchResults = await Promise.all(promises);
+    const results: CandidateTrack[] = [];
+    for (const batch of batchResults) results.push(...batch);
+    return results;
 }
 
 async function getTrackInfo(trackId: string): Promise<PathTrack | null> {
