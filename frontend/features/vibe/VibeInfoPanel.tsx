@@ -81,7 +81,7 @@ export function VibeInfoPanel({
                     {mode === "path-result" && "Song Path"}
                     {mode === "idle" && selectedTrack && "Track Info"}
                 </h3>
-                <button onClick={onClose} className="text-white/40 hover:text-white">
+                <button onClick={onClose} className="text-white/40 hover:text-white" aria-label="Close panel">
                     <X className="w-4 h-4" />
                 </button>
             </div>

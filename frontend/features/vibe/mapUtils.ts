@@ -9,8 +9,8 @@ const MOOD_COLORS: Record<string, [number, number, number]> = {
     moodSad:        [100, 100, 220],
     moodRelaxed:    [80, 200, 160],
     moodAggressive: [220, 50, 80],
-    moodParty:      [50, 180, 240],
-    moodAcoustic:   [80, 200, 160],
+    moodParty:      [240, 90, 200],
+    moodAcoustic:   [180, 160, 100],
     moodElectronic: [50, 180, 240],
     neutral:        [160, 150, 140],
 };

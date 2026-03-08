@@ -119,6 +119,7 @@ export function VibeAlchemy({ onHighlight, onClose }: VibeAlchemyProps) {
                 <button
                     onClick={onClose}
                     className="text-white/40 hover:text-white"
+                    aria-label="Close alchemy"
                 >
                     <X className="w-4 h-4" />
                 </button>
@@ -130,6 +131,7 @@ export function VibeAlchemy({ onHighlight, onClose }: VibeAlchemyProps) {
                         <button
                             onClick={() => setAddingTo("add")}
                             className={`text-xs mb-2 flex items-center gap-1 ${addingTo === "add" ? "text-emerald-400" : "text-white/40"}`}
+                            aria-pressed={addingTo === "add"}
                         >
                             <Plus className="w-3 h-3" /> More Like
                         </button>
@@ -144,6 +146,7 @@ export function VibeAlchemy({ onHighlight, onClose }: VibeAlchemyProps) {
                                 <button
                                     onClick={() => removeTrack(t.id, "add")}
                                     className="text-white/30 hover:text-white"
+                                    aria-label={`Remove ${t.title}`}
                                 >
                                     <X className="w-3 h-3" />
                                 </button>
@@ -154,6 +157,7 @@ export function VibeAlchemy({ onHighlight, onClose }: VibeAlchemyProps) {
                         <button
                             onClick={() => setAddingTo("subtract")}
                             className={`text-xs mb-2 flex items-center gap-1 ${addingTo === "subtract" ? "text-rose-400" : "text-white/40"}`}
+                            aria-pressed={addingTo === "subtract"}
                         >
                             <Minus className="w-3 h-3" /> Less Like
                         </button>
@@ -170,6 +174,7 @@ export function VibeAlchemy({ onHighlight, onClose }: VibeAlchemyProps) {
                                         removeTrack(t.id, "subtract")
                                     }
                                     className="text-white/30 hover:text-white"
+                                    aria-label={`Remove ${t.title}`}
                                 >
                                     <X className="w-3 h-3" />
                                 </button>
@@ -179,8 +184,10 @@ export function VibeAlchemy({ onHighlight, onClose }: VibeAlchemyProps) {
                 </div>
 
                 <div className="relative">
+                    <label htmlFor="alchemy-search" className="sr-only">Search tracks for alchemy</label>
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30" />
                     <input
+                        id="alchemy-search"
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}

@@ -191,16 +191,39 @@ function cosineDistance(a: number[], b: number[]): number {
     return 1 - (dot / denom);
 }
 
+/**
+ * Spherical linear interpolation (SLERP) between two unit vectors.
+ * Produces uniform spacing along the great circle connecting start and end,
+ * which is correct for cosine-distance-indexed embeddings.
+ * Falls back to LERP + normalize for near-parallel vectors where SLERP is numerically unstable.
+ */
 function interpolateEmbeddings(start: number[], end: number[], t: number): number[] {
+    let dot = 0;
+    for (let i = 0; i < start.length; i++) dot += start[i] * end[i];
+    dot = Math.max(-1, Math.min(1, dot));
+
+    const theta = Math.acos(dot);
+
+    // For near-parallel vectors, fall back to LERP + normalize
+    if (theta < 1e-6) {
+        const result = new Array(start.length);
+        for (let i = 0; i < start.length; i++) {
+            result[i] = start[i] + (end[i] - start[i]) * t;
+        }
+        let norm = 0;
+        for (let i = 0; i < result.length; i++) norm += result[i] * result[i];
+        norm = Math.sqrt(norm);
+        if (norm > 0) for (let i = 0; i < result.length; i++) result[i] /= norm;
+        return result;
+    }
+
+    const sinTheta = Math.sin(theta);
+    const w0 = Math.sin((1 - t) * theta) / sinTheta;
+    const w1 = Math.sin(t * theta) / sinTheta;
+
     const result = new Array(start.length);
     for (let i = 0; i < start.length; i++) {
-        result[i] = start[i] + (end[i] - start[i]) * t;
-    }
-    let norm = 0;
-    for (let i = 0; i < result.length; i++) norm += result[i] * result[i];
-    norm = Math.sqrt(norm);
-    if (norm > 0) {
-        for (let i = 0; i < result.length; i++) result[i] /= norm;
+        result[i] = w0 * start[i] + w1 * end[i];
     }
     return result;
 }

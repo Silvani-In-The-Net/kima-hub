@@ -66,15 +66,17 @@ export function VibeSongPath({ onStartPath, onClose }: VibeSongPathProps) {
                 <h3 className="text-sm font-medium text-white/90 flex items-center gap-2">
                     <Route className="w-4 h-4" /> Song Path
                 </h3>
-                <button onClick={onClose} className="text-white/40 hover:text-white">
+                <button onClick={onClose} className="text-white/40 hover:text-white" aria-label="Close song path">
                     <X className="w-4 h-4" />
                 </button>
             </div>
 
             <div className="space-y-2">
                 <div className="relative">
+                    <label htmlFor="path-start" className="sr-only">Start track</label>
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30" />
                     <input
+                        id="path-start"
                         type="text"
                         value={startQuery}
                         onChange={(e) => { setStartQuery(e.target.value); setStartTrackId(null); }}
@@ -84,13 +86,15 @@ export function VibeSongPath({ onStartPath, onClose }: VibeSongPathProps) {
                     />
                 </div>
 
-                <div className="flex justify-center">
+                <div className="flex justify-center" aria-hidden="true">
                     <ArrowRight className="w-4 h-4 text-white/20" />
                 </div>
 
                 <div className="relative">
+                    <label htmlFor="path-end" className="sr-only">End track</label>
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30" />
                     <input
+                        id="path-end"
                         type="text"
                         value={endQuery}
                         onChange={(e) => { setEndQuery(e.target.value); setEndTrackId(null); }}
