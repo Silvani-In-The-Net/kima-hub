@@ -20,6 +20,12 @@ const router = Router();
 // Load vocabulary at module initialization
 loadVocabulary();
 
+const CUID_RE = /^c[a-z0-9]{20,30}$/;
+
+function sanitizeForLog(s: string): string {
+    return s.replace(/[\x00-\x1f\x7f]/g, "").slice(0, 100);
+}
+
 interface TextSearchResult {
     id: string;
     title: string;
@@ -74,6 +80,10 @@ router.post("/path", requireAuth, async (req, res) => {
             return res.status(400).json({ error: "startTrackId and endTrackId are required strings" });
         }
 
+        if (!CUID_RE.test(startTrackId) || !CUID_RE.test(endTrackId)) {
+            return res.status(400).json({ error: "Invalid track ID format" });
+        }
+
         if (startTrackId === endTrackId) {
             return res.status(400).json({ error: "Start and end tracks must be different" });
         }
@@ -116,12 +126,12 @@ router.post("/alchemy", requireAuth, async (req, res) => {
             return res.status(400).json({ error: "'subtract' must be an array of at most 10 tracks" });
         }
 
-        if (!add.every((id: unknown) => typeof id === "string" && id.length > 0)) {
-            return res.status(400).json({ error: "'add' must contain non-empty string track IDs" });
+        if (!add.every((id: unknown) => typeof id === "string" && CUID_RE.test(id))) {
+            return res.status(400).json({ error: "'add' must contain valid track IDs" });
         }
 
-        if (subtract && !subtract.every((id: unknown) => typeof id === "string" && id.length > 0)) {
-            return res.status(400).json({ error: "'subtract' must contain non-empty string track IDs" });
+        if (subtract && !subtract.every((id: unknown) => typeof id === "string" && CUID_RE.test(id))) {
+            return res.status(400).json({ error: "'subtract' must contain valid track IDs" });
         }
 
         const limit = Math.min(Math.max(1, requestedLimit || 20), 100);
@@ -309,7 +319,9 @@ router.post("/search", requireAuth, async (req, res) => {
         // similarity = 1 - (distance / 2), so distance = 2 * (1 - similarity)
         const maxDistance = 2 * (1 - similarityThreshold);
 
-        const textEmbedding = await getTextEmbedding(query.trim());
+        const trimmedQuery = query.trim();
+        const safeQuery = sanitizeForLog(trimmedQuery);
+        const textEmbedding = await getTextEmbedding(trimmedQuery);
 
         const vocab = getVocabulary();
         let searchEmbedding = textEmbedding;
@@ -317,12 +329,12 @@ router.post("/search", requireAuth, async (req, res) => {
         let matchedTerms: VocabTerm[] = [];
 
         if (vocab) {
-            const expansion = expandQueryWithVocabulary(textEmbedding, query.trim(), vocab);
+            const expansion = expandQueryWithVocabulary(textEmbedding, trimmedQuery, vocab);
             searchEmbedding = expansion.embedding;
             genreConfidence = expansion.genreConfidence;
             matchedTerms = expansion.matchedTerms;
 
-            logger.info(`[VIBE-SEARCH] Query "${query.trim()}" expanded with terms: ${matchedTerms.map(t => t.name).join(", ") || "none"}, genre confidence: ${(genreConfidence * 100).toFixed(0)}%`);
+            logger.info(`[VIBE-SEARCH] Query "${safeQuery}" expanded with terms: ${matchedTerms.map(t => t.name).join(", ") || "none"}, genre confidence: ${(genreConfidence * 100).toFixed(0)}%`);
         }
 
         const similarTracks = await prisma.$queryRaw<TextSearchResult[]>`
@@ -359,7 +371,7 @@ router.post("/search", requireAuth, async (req, res) => {
             LIMIT ${limit * 3}
         `;
 
-        logger.info(`Vibe search "${query.trim()}": found ${similarTracks.length} candidates above ${Math.round(similarityThreshold * 100)}% similarity (max distance: ${maxDistance.toFixed(2)})`);
+        logger.info(`Vibe search "${safeQuery}": found ${similarTracks.length} candidates above ${Math.round(similarityThreshold * 100)}% similarity (max distance: ${maxDistance.toFixed(2)})`);
 
         let rankedTracks: typeof similarTracks | ReturnType<typeof rerankWithFeatures<TextSearchResult>> = similarTracks;
         if (vocab && matchedTerms.length > 0) {
@@ -398,7 +410,7 @@ router.post("/search", requireAuth, async (req, res) => {
         }));
 
         res.json({
-            query: query.trim(),
+            query: trimmedQuery,
             tracks,
             minSimilarity: similarityThreshold,
             totalAboveThreshold: tracks.length,
