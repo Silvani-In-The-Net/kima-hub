@@ -1,80 +1,82 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
+import { useEffect, useCallback, useRef, useSyncExternalStore } from "react";
 import { useAudioControls } from "@/lib/audio-controls-context";
 
 // Module-level shared state so timer persists across player mode switches
-let sharedEndTime: number | null = null;
+let endTime: number | null = null;
+let remaining: number | null = null;
+let tickInterval: ReturnType<typeof setInterval> | null = null;
+let expireCallback: (() => void) | null = null;
+
 const listeners = new Set<() => void>();
-
-function getEndTime() {
-    return sharedEndTime;
-}
-
-function getServerEndTime() {
-    return null;
-}
+function notify() { listeners.forEach((fn) => fn()); }
 
 function subscribe(cb: () => void) {
     listeners.add(cb);
     return () => { listeners.delete(cb); };
 }
 
-function setSharedEndTime(t: number | null) {
-    sharedEndTime = t;
-    listeners.forEach((cb) => cb());
+function tick() {
+    if (endTime === null) {
+        remaining = null;
+        return;
+    }
+    const leftMs = Math.max(0, endTime - Date.now());
+    if (leftMs <= 0) {
+        endTime = null;
+        remaining = null;
+        if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+        expireCallback?.();
+        notify();
+        return;
+    }
+    remaining = Math.ceil(leftMs / 1000);
+    notify();
 }
 
+function startTimer(minutes: number) {
+    endTime = Date.now() + minutes * 60 * 1000;
+    tick();
+    if (!tickInterval) tickInterval = setInterval(tick, 1000);
+    notify();
+}
+
+function stopTimer() {
+    endTime = null;
+    remaining = null;
+    if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+    notify();
+}
+
+function getEndTime() { return endTime; }
+function getRemaining() { return remaining; }
+function getServerSnapshot() { return null; }
+
 interface SleepTimerState {
-    /** Seconds remaining (null = inactive) */
     remainingSeconds: number | null;
     isActive: boolean;
     setTimer: (minutes: number) => void;
     clearTimer: () => void;
-    /** Formatted remaining time (e.g. "1h 23m", "14m", "0:45") */
     displayRemaining: string;
 }
 
 export function useSleepTimer(): SleepTimerState {
     const { pause } = useAudioControls();
-    const endTime = useSyncExternalStore(subscribe, getEndTime, getServerEndTime);
-    const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+
     const pauseRef = useRef(pause);
-    pauseRef.current = pause;
-
-    const setTimer = useCallback((minutes: number) => {
-        setSharedEndTime(Date.now() + minutes * 60 * 1000);
-    }, []);
-
-    const clearTimer = useCallback(() => {
-        setSharedEndTime(null);
-        setRemainingSeconds(null);
-    }, []);
+    useEffect(() => { pauseRef.current = pause; }, [pause]);
 
     useEffect(() => {
-        if (endTime === null) {
-            setRemainingSeconds(null);
-            return;
-        }
+        expireCallback = () => pauseRef.current();
+        return () => { expireCallback = null; };
+    }, []);
 
-        const tick = () => {
-            const leftMs = Math.max(0, endTime - Date.now());
-            const secs = Math.ceil(leftMs / 1000);
+    const active = useSyncExternalStore(subscribe, getEndTime, getServerSnapshot);
+    const remainingSeconds = useSyncExternalStore(subscribe, getRemaining, getServerSnapshot);
 
-            if (leftMs <= 0) {
-                pauseRef.current();
-                setSharedEndTime(null);
-                setRemainingSeconds(null);
-                return;
-            }
-
-            setRemainingSeconds(secs);
-        };
-
-        tick();
-        const id = setInterval(tick, 1000);
-        return () => clearInterval(id);
-    }, [endTime]);
+    const setTimer = useCallback((minutes: number) => { startTimer(minutes); }, []);
+    const clearTimer = useCallback(() => { stopTimer(); }, []);
 
     let displayRemaining = "";
     if (remainingSeconds !== null) {
@@ -91,7 +93,7 @@ export function useSleepTimer(): SleepTimerState {
 
     return {
         remainingSeconds,
-        isActive: endTime !== null,
+        isActive: active !== null,
         setTimer,
         clearTimer,
         displayRemaining,
