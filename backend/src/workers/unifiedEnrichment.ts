@@ -16,6 +16,7 @@ import { prisma } from "../utils/db";
 import { lastFmService } from "../services/lastfm";
 import Redis from "ioredis";
 import { config } from "../config";
+import path from "path";
 import type { Worker as BullWorker } from "bullmq";
 import {
     artistQueue,
@@ -590,6 +591,12 @@ async function runEnrichmentCycle(fullMode: boolean): Promise<{
         }
         tracksProcessed = trackResult;
 
+        // Pre-scan: validate audio headers before queuing for analysis
+        const scanResult = await runPhase("scan", executeScanPhase);
+        if (scanResult === null) {
+            return { artists: artistsProcessed, tracks: tracksProcessed, audioQueued: 0 };
+        }
+
         const audioResult = await runPhase("audio", executeAudioPhase);
         if (audioResult === null) {
             return { artists: artistsProcessed, tracks: tracksProcessed, audioQueued: 0 };
@@ -897,7 +904,8 @@ async function queueAudioAnalysis(): Promise<number> {
     const tracks = await prisma.track.findMany({
         where: {
             analysisStatus: "pending",
-            analysisRetryCount: { lt: 3 }, // matches Python's MAX_RETRIES — skip tracks the analyzer will ignore
+            scanStatus: "valid",
+            analysisRetryCount: { lt: 3 }, // matches Python's MAX_RETRIES -- skip tracks the analyzer will ignore
         },
         select: {
             id: true,
@@ -970,7 +978,7 @@ async function shouldHaltCycle(): Promise<boolean> {
  * Run a phase and return result. Returns null if cycle should halt.
  */
 async function runPhase(
-    phaseName: "artists" | "tracks" | "audio" | "podcasts" | "vibe",
+    phaseName: "artists" | "tracks" | "scan" | "audio" | "podcasts" | "vibe",
     executor: () => Promise<number>,
 ): Promise<number | null> {
     await enrichmentStateService.updateState({
@@ -1084,6 +1092,72 @@ async function executeMoodTagsPhase(): Promise<number> {
         logger.debug(`[Enrichment] Queued ${queuedIds.length} tracks`);
     }
     return queuedIds.length;
+}
+
+const SCAN_BATCH_SIZE = 100;
+
+async function executeScanPhase(): Promise<number> {
+    const musicPath = config.music.musicPath;
+    if (!musicPath) return 0;
+
+    const tracks = await prisma.track.findMany({
+        where: {
+            scanStatus: "pending",
+            corrupt: false,
+        },
+        select: { id: true, filePath: true, title: true },
+        take: SCAN_BATCH_SIZE,
+        orderBy: { fileModified: "desc" },
+    });
+
+    if (tracks.length === 0) return 0;
+
+    const { validateAudioHeader } = await import("../services/audioScanValidator");
+    const redis = getRedis();
+    let validated = 0;
+    let invalid = 0;
+
+    for (const track of tracks) {
+        if (await shouldHaltCycle()) return validated;
+
+        const fullPath = path.join(musicPath, track.filePath);
+        const result = await validateAudioHeader(fullPath);
+
+        if (result.valid) {
+            await prisma.track.update({
+                where: { id: track.id },
+                data: { scanStatus: "validating" },
+            });
+            await redis.rpush(
+                "audio:scan:queue",
+                JSON.stringify({ trackId: track.id, filePath: track.filePath }),
+            );
+            validated++;
+        } else {
+            await prisma.track.update({
+                where: { id: track.id },
+                data: {
+                    scanStatus: "invalid",
+                    scanError: result.error ?? "Unknown validation failure",
+                },
+            });
+            await enrichmentFailureService.recordFailure({
+                entityType: "scan",
+                entityId: track.id,
+                entityName: track.title,
+                errorMessage: result.error ?? "Unknown validation failure",
+                errorCode: "SCAN_INVALID",
+                metadata: { filePath: track.filePath },
+            });
+            invalid++;
+        }
+    }
+
+    if (invalid > 0) {
+        logger.info(`[Enrichment] Pre-scan: ${validated} valid, ${invalid} invalid`);
+    }
+
+    return validated;
 }
 
 async function executeAudioPhase(): Promise<number> {

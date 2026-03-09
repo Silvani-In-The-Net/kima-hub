@@ -10,7 +10,7 @@ import { prisma } from "../utils/db";
 
 export interface EnrichmentFailure {
     id: string;
-    entityType: "artist" | "track" | "audio" | "vibe" | "podcast";
+    entityType: "artist" | "track" | "audio" | "vibe" | "podcast" | "scan";
     entityId: string;
     entityName: string | null;
     errorMessage: string | null;
@@ -27,7 +27,7 @@ export interface EnrichmentFailure {
 }
 
 export interface RecordFailureInput {
-    entityType: "artist" | "track" | "audio" | "vibe" | "podcast";
+    entityType: "artist" | "track" | "audio" | "vibe" | "podcast" | "scan";
     entityId: string;
     entityName?: string;
     errorMessage: string;
@@ -36,7 +36,7 @@ export interface RecordFailureInput {
 }
 
 export interface GetFailuresOptions {
-    entityType?: "artist" | "track" | "audio" | "vibe" | "podcast";
+    entityType?: "artist" | "track" | "audio" | "vibe" | "podcast" | "scan";
     includeSkipped?: boolean;
     includeResolved?: boolean;
     limit?: number;
@@ -243,7 +243,7 @@ class EnrichmentFailureService {
     /**
      * Clear all unresolved failures (optionally filtered by type)
      */
-    async clearAllFailures(entityType?: "artist" | "track" | "audio" | "vibe" | "podcast"): Promise<number> {
+    async clearAllFailures(entityType?: "artist" | "track" | "audio" | "vibe" | "podcast" | "scan"): Promise<number> {
         const where: any = {
             resolved: false,
             skipped: false,

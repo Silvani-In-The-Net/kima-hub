@@ -14,7 +14,7 @@ const ENRICHMENT_CONTROL_CHANNEL = "enrichment:control";
 const AUDIO_ANALYSIS_CONTROL_CHANNEL = "audio:analysis:control";
 
 export type EnrichmentStatus = "idle" | "running" | "paused" | "stopping";
-export type EnrichmentPhase = "artists" | "tracks" | "audio" | "vibe" | "podcasts" | null;
+export type EnrichmentPhase = "artists" | "tracks" | "scan" | "audio" | "vibe" | "podcasts" | null;
 
 export interface EnrichmentState {
     status: EnrichmentStatus;

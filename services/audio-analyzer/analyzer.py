@@ -1498,6 +1498,9 @@ class AnalysisWorker:
                         time.sleep(1)
                         continue
 
+                    # Check scan validation queue (non-blocking, 1s timeout)
+                    self.process_scan_queue()
+
                     # BRPOP-driven: blocks until work arrives or timeout
                     has_work = self.process_batch_parallel()
 
@@ -1802,6 +1805,87 @@ class AnalysisWorker:
             self.db.rollback()
         finally:
             cursor.close()
+
+
+    def _validate_track(self, track_id: str, file_path: str) -> dict:
+        """Quick Essentia load test -- no ML inference, just decode validation."""
+        music_path = os.getenv('MUSIC_PATH', '/music')
+        full_path = os.path.join(music_path, file_path)
+
+        if not os.path.exists(full_path):
+            return {'valid': False, 'error': 'File not found'}
+
+        if os.path.getsize(full_path) == 0:
+            return {'valid': False, 'error': 'Empty file (0 bytes)'}
+
+        try:
+            loader = es.MonoLoader(filename=full_path, sampleRate=44100)
+            audio = loader()
+
+            if len(audio) == 0:
+                return {'valid': False, 'error': 'Audio is empty after decoding'}
+
+            duration = len(audio) / 44100.0
+            if duration < 5.0:
+                return {'valid': False, 'error': f'Audio too short: {duration:.1f}s (minimum 5s)'}
+
+            if np.any(np.isnan(audio)) or np.any(np.isinf(audio)):
+                return {'valid': False, 'error': 'Audio contains NaN or Inf values'}
+
+            rms = np.sqrt(np.mean(audio ** 2))
+            if rms < 1e-6:
+                return {'valid': False, 'error': 'Audio is effectively silent'}
+
+            return {'valid': True}
+        except Exception as e:
+            return {'valid': False, 'error': f'Essentia load failed: {str(e)[:200]}'}
+
+    def process_scan_queue(self):
+        """Process scan validation requests from Redis queue."""
+        SCAN_QUEUE = 'audio:scan:queue'
+        result = self.redis.brpop(SCAN_QUEUE, timeout=1)
+        if result is None:
+            return False
+
+        _, job_data = result
+        jobs = []
+        jobs.append(json.loads(job_data))
+
+        while len(jobs) < 50:
+            more = self.redis.lpop(SCAN_QUEUE)
+            if not more:
+                break
+            jobs.append(json.loads(more))
+
+        cursor = self.db.get_cursor()
+        try:
+            for job in jobs:
+                track_id = job['trackId']
+                file_path = job.get('filePath', '')
+                result = self._validate_track(track_id, file_path)
+
+                if result['valid']:
+                    cursor.execute("""
+                        UPDATE "Track"
+                        SET "scanStatus" = 'valid', "scanError" = NULL
+                        WHERE id = %s
+                    """, (track_id,))
+                else:
+                    cursor.execute("""
+                        UPDATE "Track"
+                        SET "scanStatus" = 'invalid', "scanError" = %s
+                        WHERE id = %s
+                    """, (result['error'][:500], track_id))
+
+            self.db.commit()
+            logger.info(f"Scan validation: processed {len(jobs)} tracks")
+        except Exception as e:
+            logger.error(f"Scan validation failed: {e}")
+            self.db.rollback()
+        finally:
+            cursor.close()
+
+        return True
 
 
 def main():
