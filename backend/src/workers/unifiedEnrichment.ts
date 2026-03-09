@@ -1626,3 +1626,99 @@ export async function triggerEnrichmentNow(): Promise<{
 
      return queued;
  }
+
+export async function resetAllEnrichmentData(): Promise<{
+    tracksReset: number;
+    embeddingsDeleted: number;
+    failuresDeleted: number;
+    moodBucketsDeleted: number;
+}> {
+    await enrichmentStateService.stop();
+
+    const redisInstance = getRedis();
+
+    const tracksReset = await prisma.track.updateMany({
+        data: {
+            analysisStatus: "pending",
+            analysisError: null,
+            analysisRetryCount: 0,
+            analysisStartedAt: null,
+            analysisVersion: null,
+            analysisMode: null,
+            analyzedAt: null,
+            scanStatus: "pending",
+            scanError: null,
+            vibeAnalysisStatus: null,
+            vibeAnalysisStartedAt: null,
+            vibeAnalysisError: null,
+            vibeAnalysisRetryCount: 0,
+            vibeAnalysisStatusUpdatedAt: null,
+            bpm: null,
+            beatsCount: null,
+            key: null,
+            keyScale: null,
+            keyStrength: null,
+            energy: null,
+            loudness: null,
+            dynamicRange: null,
+            danceability: null,
+            valence: null,
+            arousal: null,
+            instrumentalness: null,
+            acousticness: null,
+            speechiness: null,
+            moodHappy: null,
+            moodSad: null,
+            moodRelaxed: null,
+            moodAggressive: null,
+            moodParty: null,
+            moodAcoustic: null,
+            moodElectronic: null,
+            danceabilityMl: null,
+            moodTags: [],
+            essentiaGenres: [],
+            lastfmTags: [],
+            corrupt: false,
+        },
+    });
+
+    await prisma.$executeRaw`TRUNCATE TABLE track_embeddings`;
+
+    const moodBucketsDeleted = await prisma.moodBucket.deleteMany({});
+
+    const failuresDeleted = await prisma.enrichmentFailure.deleteMany({});
+
+    const keysToDelete = [
+        "audio:analysis:queue",
+        "audio:scan:queue",
+        "audio:worker:heartbeat",
+        "audio:cleanup:last_run",
+        "enrichment:state",
+    ];
+    const vibeKeys = await redisInstance.keys("vibe:map:*");
+    if (vibeKeys.length > 0) keysToDelete.push(...vibeKeys);
+
+    if (keysToDelete.length > 0) {
+        await redisInstance.del(...keysToDelete);
+    }
+
+    try {
+        const { Queue } = await import("bullmq");
+        const vQueue = new Queue("vibe-embedding", { connection: redisInstance as any });
+        await vQueue.obliterate({ force: true });
+        await vQueue.close();
+    } catch {
+        // Queue may not exist yet
+    }
+
+    audioAnalysisCleanupService.resetCircuitBreaker();
+
+    logger.info(`[Enrichment] Full reset: ${tracksReset.count} tracks, embeddings truncated, ${failuresDeleted.count} failures cleared`);
+
+    return {
+        tracksReset: tracksReset.count,
+        embeddingsDeleted: 0,
+        failuresDeleted: failuresDeleted.count,
+        moodBucketsDeleted: moodBucketsDeleted.count,
+    };
+}

@@ -10,6 +10,7 @@ import {
   reRunArtistsOnly,
   reRunMoodTagsOnly,
   reRunAudioAnalysisOnly,
+  resetAllEnrichmentData,
   triggerEnrichmentNow,
 } from "../workers/unifiedEnrichment";
 import { enrichmentStateService } from "../services/enrichmentState";
@@ -181,6 +182,25 @@ router.post("/reset-audio-analysis", requireAdmin, async (req, res) => {
   } catch (error) {
     logger.error("Reset audio analysis error:", error);
     res.status(500).json({ error: "Failed to reset audio analysis" });
+  }
+});
+
+/**
+ * POST /enrichment/reset-all
+ * Reset ALL enrichment data -- analysis, embeddings, mood tags, failures
+ * Preserves artist metadata (bios, images)
+ * Admin only
+ */
+router.post("/reset-all", requireAdmin, async (req, res) => {
+  try {
+    const result = await resetAllEnrichmentData();
+    res.json({
+      message: "All enrichment data reset",
+      ...result,
+    });
+  } catch (error) {
+    logger.error("Reset all enrichment error:", error);
+    res.status(500).json({ error: "Failed to reset enrichment data" });
   }
 });
 

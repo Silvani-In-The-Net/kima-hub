@@ -1455,6 +1455,18 @@ class ApiClient {
         }>("/enrichment/reset-audio-analysis", { method: "POST" });
     }
 
+    async resetAllEnrichmentData() {
+        return this.request<{
+            message: string;
+            tracksReset: number;
+            embeddingsDeleted: number;
+            failuresDeleted: number;
+            moodBucketsDeleted: number;
+        }>("/enrichment/reset-all", {
+            method: "POST",
+        });
+    }
+
     async retryFailedAnalysis() {
         return this.request<{ message: string; reset: number }>("/analysis/retry-failed", {
             method: "POST",

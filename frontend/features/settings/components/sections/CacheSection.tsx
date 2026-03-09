@@ -195,6 +195,7 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
     const [resettingMoodTags, setResettingMoodTags] = useState(false);
     const [resettingAudio, setResettingAudio] = useState(false);
     const [resettingVibe, setResettingVibe] = useState(false);
+    const [resettingEnrichment, setResettingEnrichment] = useState(false);
     const [retryingFailed, setRetryingFailed] = useState(false);
     const [retryResult, setRetryResult] = useState<{ reset: number } | null>(null);
     const [cleanupResult, setCleanupResult] = useState<{
@@ -512,6 +513,32 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
             setError("Failed to retry analysis");
         } finally {
             setRetryingFailed(false);
+        }
+    };
+
+    const handleResetEnrichment = async () => {
+        if (!window.confirm(
+            "This will wipe ALL enrichment data:\n\n" +
+            "- Audio analysis results (BPM, key, energy, etc.)\n" +
+            "- Track embeddings (vibe map, similarity)\n" +
+            "- Mood tags and genre tags\n" +
+            "- All failure records\n" +
+            "- Scan validation status\n\n" +
+            "Artist metadata (bios, images) will be kept.\n\n" +
+            "Are you sure?"
+        )) return;
+
+        setResettingEnrichment(true);
+        setError(null);
+        try {
+            await api.resetAllEnrichmentData();
+            refetchProgress();
+            refreshNotifications();
+        } catch (err) {
+            console.error("Reset enrichment error:", err);
+            setError("Failed to reset enrichment data");
+        } finally {
+            setResettingEnrichment(false);
         }
     };
 
@@ -1122,6 +1149,14 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                             No stale jobs found
                         </p>
                     )}
+                    <button
+                        onClick={handleResetEnrichment}
+                        disabled={resettingEnrichment || isEnrichmentActive}
+                        className="px-3 py-1.5 text-xs font-black bg-red-600/80 text-white rounded-lg uppercase tracking-wider
+                            hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        {resettingEnrichment ? "Resetting..." : "Reset Enrichment Data"}
+                    </button>
                     {error && <p className="text-xs font-mono text-red-400 uppercase tracking-wider">{error}</p>}
                 </div>
             </SettingsSection>
