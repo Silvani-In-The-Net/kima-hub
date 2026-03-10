@@ -156,6 +156,9 @@ DEPLOYMENT_COMMANDS_*.txt
 *_RELEASE_SUMMARY.md
 CODE_REVIEW_*.md
 
+# Local stress tests
+tests/stress/
+
 # Development
 .worktrees/
 reset-and-setup.sh

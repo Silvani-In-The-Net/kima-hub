@@ -1014,7 +1014,13 @@ def _pool_health_check():
 
 
 def _validate_track_in_process(args: Tuple[str, str]) -> Tuple[str, dict]:
-    """Validate a track in a worker process -- decode test, no ML inference."""
+    """Lightweight validation -- file existence and size only.
+
+    Full Essentia decode happens during analysis. If a file passes this check
+    but fails decode, the analysis retry mechanism handles it (MAX_RETRIES=3
+    then permanently_failed). Node.js already runs a 16-byte header check
+    before queuing to Python.
+    """
     track_id, file_path = args
     full_path = os.path.join(MUSIC_PATH, file_path.replace('\\', '/'))
 
@@ -1024,29 +1030,7 @@ def _validate_track_in_process(args: Tuple[str, str]) -> Tuple[str, dict]:
     if os.path.getsize(full_path) == 0:
         return (track_id, {'valid': False, 'error': 'Empty file (0 bytes)'})
 
-    try:
-        loader = es.MonoLoader(filename=full_path, sampleRate=44100)
-        audio = loader()
-
-        if len(audio) == 0:
-            return (track_id, {'valid': False, 'error': 'Audio is empty after decoding'})
-
-        duration = len(audio) / 44100.0
-        if duration < 5.0:
-            return (track_id, {'valid': False, 'error': f'Audio too short: {duration:.1f}s (minimum 5s)'})
-
-        # Check a 10s sample for corruption indicators
-        sample = audio[:min(len(audio), 441000)]
-        if np.any(np.isnan(sample)) or np.any(np.isinf(sample)):
-            return (track_id, {'valid': False, 'error': 'Audio contains NaN or Inf values'})
-
-        rms = np.sqrt(np.mean(sample ** 2))
-        if rms < 1e-6:
-            return (track_id, {'valid': False, 'error': 'Audio is effectively silent'})
-
-        return (track_id, {'valid': True})
-    except Exception as e:
-        return (track_id, {'valid': False, 'error': f'Essentia load failed: {str(e)[:200]}'})
+    return (track_id, {'valid': True})
 
 def _init_worker_process():
     """
@@ -1965,6 +1949,7 @@ class AnalysisWorker:
                         SET "scanStatus" = 'pending', "scanError" = NULL
                         WHERE id = %s
                     """, (track_id,))
+                    self.db.commit()
                     logger.error(f"Scan worker died for {track_id}, reset to pending")
                     continue
                 except Exception as e:
@@ -1974,23 +1959,31 @@ class AnalysisWorker:
                         SET "scanStatus" = 'pending', "scanError" = NULL
                         WHERE id = %s
                     """, (track_id,))
+                    self.db.commit()
                     logger.error(f"Scan validation error for {track_id}: {e}")
                     continue
 
-                if result['valid']:
-                    cursor.execute("""
-                        UPDATE "Track"
-                        SET "scanStatus" = 'valid', "scanError" = NULL
-                        WHERE id = %s
-                    """, (track_id,))
-                else:
-                    cursor.execute("""
-                        UPDATE "Track"
-                        SET "scanStatus" = 'invalid', "scanError" = %s
-                        WHERE id = %s
-                    """, (result['error'][:500], track_id))
+                try:
+                    if result['valid']:
+                        cursor.execute("""
+                            UPDATE "Track"
+                            SET "scanStatus" = 'valid', "scanError" = NULL
+                            WHERE id = %s
+                        """, (track_id,))
+                    else:
+                        cursor.execute("""
+                            UPDATE "Track"
+                            SET "scanStatus" = 'invalid', "scanError" = %s
+                            WHERE id = %s
+                        """, (result['error'][:500], track_id))
+                    self.db.commit()
+                except Exception as db_err:
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass
+                    logger.warning(f"[Scan] DB update failed for {track_id} (will retry via stale cleanup): {db_err}")
 
-            self.db.commit()
             logger.info(f"Scan validation: processed {len(jobs)} tracks")
         except (BrokenProcessPool, TimeoutError):
             # Pool crash or timeout -- reset all unfinished scan tracks to pending
