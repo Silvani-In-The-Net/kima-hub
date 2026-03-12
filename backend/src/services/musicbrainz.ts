@@ -2,6 +2,7 @@ import axios, { AxiosInstance } from "axios";
 import { logger } from "../utils/logger";
 import { redisClient } from "../utils/redis";
 import { rateLimiter } from "./rateLimiter";
+import { USER_AGENT } from "../config";
 
 class MusicBrainzService {
     private client: AxiosInstance;
@@ -11,8 +12,7 @@ class MusicBrainzService {
             baseURL: process.env.MUSICBRAINZ_BASE_URL || "https://musicbrainz.org/ws/2",
             timeout: 10000,
             headers: {
-                "User-Agent":
-                    "Kima/1.0.0 (https://github.com/Chevron7Locked/kima-hub)",
+                "User-Agent": USER_AGENT,
             },
         });
     }

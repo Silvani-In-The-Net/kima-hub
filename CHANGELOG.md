@@ -5,6 +5,22 @@ All notable changes to Kima will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.4] - 2026-03-12
+
+Fixes #152. Addresses #145.
+
+### Fixed
+
+- **Version display (#152)**: Frontend and backend package.json were not bumped for 1.6.3. Both now read from package.json dynamically
+- **Long track playback stalling (#145)**: Added playback watchdog that monitors currentTime progress every 1s. If no advancement for 3s while playing, automatically reloads the stream at the saved position and resumes playback. Supplementary stalled event listener with 10s grace timer as fallback recovery path. Recovery limited to 3 attempts before surfacing an error
+- **Page refresh kills playback (#145)**: After a page refresh, pressing play now reloads the stream for the restored track/audiobook/podcast instead of doing nothing. Audiobook and podcast progress is seeked to saved position
+- **Network retry improvements**: Exponential backoff (1s/2s/4s) replaces linear (2s/4s), max retries bumped from 2 to 3. Network retries and stall recoveries now auto-resume playback instead of requiring manual "Tap play to resume"
+- **Stream cache validation**: Added ETag and Last-Modified headers to audio streaming responses, enabling browser If-Range optimization for efficient reconnection after stalls
+
+### Changed
+
+- **Centralized User-Agent version**: All backend HTTP clients now use a shared USER_AGENT constant from config.ts (derived from package.json) instead of hardcoded version strings scattered across 12 files
+
 ## [1.6.2] - 2026-03-05
 
 Closes #32. Partially addresses #25, #90, #124, #139.

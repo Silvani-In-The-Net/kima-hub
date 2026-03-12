@@ -1,6 +1,7 @@
 import Parser from "rss-parser";
 import axios from "axios";
 import { logger } from "../utils/logger";
+import { APP_VERSION } from "../config";
 
 interface RSSPodcast {
     title: string;
@@ -82,7 +83,7 @@ class RSSParserService {
             logger.debug(`\n [RSS PARSER] Fetching feed: ${feedUrl}`);
 
             const headers: Record<string, string> = {
-                "User-Agent": "Kima/1.6.2 (+https://github.com/Chevron7Locked/kima-hub; podcast aggregator)",
+                "User-Agent": `Kima/${APP_VERSION} (+https://github.com/Chevron7Locked/kima-hub; podcast aggregator)`,
                 "Accept": "application/rss+xml, application/xml, text/xml, */*",
                 "Accept-Encoding": "gzip, deflate",
             };

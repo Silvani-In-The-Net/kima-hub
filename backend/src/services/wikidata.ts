@@ -2,6 +2,7 @@ import crypto from "crypto";
 import axios, { AxiosInstance } from "axios";
 import { logger } from "../utils/logger";
 import { redisClient } from "../utils/redis";
+import { USER_AGENT } from "../config";
 
 interface WikidataResult {
     summary?: string;
@@ -15,8 +16,7 @@ class WikidataService {
         this.client = axios.create({
             timeout: 10000,
             headers: {
-                "User-Agent":
-                    "Kima/1.0.0 (https://github.com/Chevron7Locked/kima-hub)",
+                "User-Agent": USER_AGENT,
             },
         });
     }

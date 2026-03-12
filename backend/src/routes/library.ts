@@ -10,7 +10,7 @@ import path from "path";
 import fs from "fs";
 
 // Static imports for performance (avoid dynamic imports in hot paths)
-import { config } from "../config";
+import { config, USER_AGENT } from "../config";
 import { fanartService } from "../services/fanart";
 import { deezerService } from "../services/deezer";
 import { lidarrService } from "../services/lidarr";
@@ -1871,8 +1871,7 @@ router.get("/cover-art/:id?", imageLimiter, async (req, res) => {
         const imageResponse = await fetch(coverUrl, {
           headers: {
             Authorization: `Bearer ${audiobookshelfApiKey}`,
-            "User-Agent":
-              "Kima/1.0.0 (https://github.com/Chevron7Locked/kima-hub)",
+            "User-Agent": USER_AGENT,
           },
         });
 
@@ -2025,8 +2024,7 @@ router.get("/cover-art/:id?", imageLimiter, async (req, res) => {
         const imageResponse = await fetch(coverUrl, {
           headers: {
             Authorization: `Bearer ${audiobookshelfApiKey}`,
-            "User-Agent":
-              "Kima/1.0.0 (https://github.com/Chevron7Locked/kima-hub)",
+            "User-Agent": USER_AGENT,
           },
         });
 
@@ -2122,7 +2120,7 @@ router.get("/cover-art/:id?", imageLimiter, async (req, res) => {
     logger.debug(`[COVER-ART] Fetching: ${coverUrl.substring(0, 100)}...`);
     let imageResponse: Awaited<ReturnType<typeof globalThis.fetch>>;
     const fetchOpts = {
-      headers: { "User-Agent": "Kima/1.0.0 (https://github.com/Chevron7Locked/kima-hub)" },
+      headers: { "User-Agent": USER_AGENT },
     };
     try {
       imageResponse = await fetch(coverUrl, fetchOpts);
@@ -2292,7 +2290,7 @@ router.get("/cover-art-colors", imageLimiter, async (req, res) => {
     logger.debug(`[COLORS] Fetching image: ${imageUrl.substring(0, 100)}...`);
     const imageResponse = await fetch(imageUrl, {
       headers: {
-        "User-Agent": "Kima/1.0.0 (https://github.com/Chevron7Locked/kima-hub)",
+        "User-Agent": USER_AGENT,
       },
     });
 

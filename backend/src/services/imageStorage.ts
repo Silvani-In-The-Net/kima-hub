@@ -8,7 +8,7 @@
 import fs from "fs";
 import path from "path";
 import { logger } from "../utils/logger";
-import { config } from "../config";
+import { config, USER_AGENT } from "../config";
 
 const ARTIST_IMAGES_DIR = "artists";
 const ALBUM_IMAGES_DIR = "albums";
@@ -53,7 +53,7 @@ export async function downloadAndStoreImage(
 
         const response = await fetch(url, {
             headers: {
-                "User-Agent": "Kima/1.0.0 (https://github.com/Chevron7Locked/kima-hub)",
+                "User-Agent": USER_AGENT,
             },
             signal: AbortSignal.timeout(30000),
         });

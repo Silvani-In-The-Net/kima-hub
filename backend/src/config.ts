@@ -3,6 +3,7 @@ import { z } from "zod";
 import * as fs from "fs";
 import { validateMusicConfig, MusicConfig } from "./utils/configValidator";
 import { logger } from "./utils/logger";
+import packageJson from "../package.json";
 
 dotenv.config();
 
@@ -58,7 +59,11 @@ export async function initializeMusicConfig() {
     }
 }
 
+export const APP_VERSION = packageJson.version;
+export const USER_AGENT = `Kima/${APP_VERSION} (https://github.com/Chevron7Locked/kima-hub)`;
+
 export const config = {
+    version: APP_VERSION,
     port: parseInt(process.env.PORT || "3006", 10),
     nodeEnv: process.env.NODE_ENV || "development",
     // DATABASE_URL and REDIS_URL are validated by envSchema above, so they're guaranteed to exist

@@ -440,11 +440,14 @@ export class AudioStreamingService {
             const contentLength = end - start + 1;
 
             // Set response headers
+            const etag = `"${stats.ino}-${stats.size}-${stats.mtimeMs}"`;
             const headers: Record<string, string> = {
                 "Content-Type": mimeType,
                 "Accept-Ranges": "bytes",
                 "Cache-Control": "public, max-age=31536000",
                 "Content-Length": contentLength.toString(),
+                "ETag": etag,
+                "Last-Modified": stats.mtime.toUTCString(),
             };
 
             // Add CORS headers from request origin

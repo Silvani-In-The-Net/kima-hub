@@ -1,8 +1,8 @@
 import axios from "axios";
 import { logger } from "../utils/logger";
+import { USER_AGENT } from "../config";
 
 const LRCLIB_API = "https://lrclib.net/api";
-const USER_AGENT = "Kima/1.6.2 (https://github.com/Chevron7Locked/kima-hub)";
 
 interface LrclibResponse {
     id: number;

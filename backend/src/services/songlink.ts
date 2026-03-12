@@ -2,6 +2,7 @@ import axios from "axios";
 import { logger } from "../utils/logger";
 import { redisClient } from "../utils/redis";
 import { rateLimiter } from "./rateLimiter";
+import { USER_AGENT } from "../config";
 
 const SONGLINK_API = "https://api.song.link/v1-alpha.1/links";
 
@@ -27,7 +28,7 @@ class SongLinkService {
                 axios.get(SONGLINK_API, {
                     params: { url },
                     timeout: 10000,
-                    headers: { "User-Agent": "Kima/1.6.3" },
+                    headers: { "User-Agent": USER_AGENT },
                 }),
             );
 

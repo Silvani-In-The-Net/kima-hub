@@ -2,6 +2,7 @@ import axios, { AxiosInstance } from "axios";
 import { logger } from "../utils/logger";
 import { redisClient } from "../utils/redis";
 import { getSystemSettings } from "../utils/systemSettings";
+import { USER_AGENT } from "../config";
 
 /**
  * Fanart.tv API Service
@@ -22,8 +23,7 @@ class FanartService {
             baseURL: "https://webservice.fanart.tv/v3",
             timeout: 10000,
             headers: {
-                "User-Agent":
-                    "Kima/1.0.0 (https://github.com/Chevron7Locked/kima-hub)",
+                "User-Agent": USER_AGENT,
             },
         });
     }

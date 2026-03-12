@@ -1,6 +1,6 @@
 import { prisma } from "../utils/db";
 import { logger } from "../utils/logger";
-import { config } from "../config";
+import { config, USER_AGENT } from "../config";
 import fs from "fs/promises";
 import path from "path";
 import axios from "axios";
@@ -213,7 +213,7 @@ async function performDownload(
             responseType: 'stream',
             timeout: 600000, // 10 minute timeout for large files (3+ hour podcasts)
             headers: {
-                'User-Agent': 'Kima/1.0 (https://github.com/Chevron7Locked/kima-hub)'
+                'User-Agent': USER_AGENT
             },
             // Don't let axios decompress - we want raw bytes
             decompress: false

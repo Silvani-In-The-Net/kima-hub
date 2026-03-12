@@ -27,9 +27,25 @@ export class AudioController {
     private isMuted = false;
 
     private networkRetryCount = 0;
-    private readonly MAX_NETWORK_RETRIES = 2;
+    private readonly MAX_NETWORK_RETRIES = 3;
     private networkRetryTimeout: ReturnType<typeof setTimeout> | null = null;
     private retrySeekTime: number | null = null;
+
+    // Stall watchdog state
+    private watchdogInterval: ReturnType<typeof setInterval> | null = null;
+    private lastWatchdogTime = -1;
+    private lastTimeChangeAt = 0;
+    private readonly WATCHDOG_CHECK_MS = 1000;
+    private readonly WATCHDOG_STALL_MS = 3000;
+
+    // Stalled event grace timer
+    private stallGraceTimeout: ReturnType<typeof setTimeout> | null = null;
+    private readonly STALL_GRACE_MS = 10000;
+
+    // Stall recovery state
+    private stallRecoveryCount = 0;
+    private readonly MAX_STALL_RECOVERIES = 3;
+    private autoResumeAfterRecovery = false;
 
     constructor(audio: HTMLAudioElement) {
         this.audio = audio;
@@ -71,18 +87,24 @@ export class AudioController {
 
         add("playing", () => {
             this.networkRetryCount = 0;
+            this.stallRecoveryCount = 0;
+            this.startWatchdog();
+            this.cancelStallGrace();
             this.emit("play");
         });
 
         add("pause", () => {
+            this.stopWatchdog();
             this.emit("pause");
         });
 
         add("ended", () => {
+            this.stopWatchdog();
             this.emit("ended");
         });
 
         add("timeupdate", () => {
+            this.cancelStallGrace();
             this.emit("timeupdate", { time: this.audio.currentTime });
         });
 
@@ -96,6 +118,10 @@ export class AudioController {
                     // Element not ready
                 }
             }
+            if (this.autoResumeAfterRecovery) {
+                this.autoResumeAfterRecovery = false;
+                this.play();
+            }
             this.emit("canplay", { duration: this.audio.duration || 0 });
         });
 
@@ -108,7 +134,25 @@ export class AudioController {
         });
 
         add("seeked", () => {
+            this.resetWatchdog();
             this.emit("seeked", { time: this.audio.currentTime });
+        });
+
+        add("stalled", () => {
+            if (this.audio.paused || this.audio.ended) return;
+            if (this.stallGraceTimeout) return;
+
+            this.stallGraceTimeout = setTimeout(() => {
+                this.stallGraceTimeout = null;
+                if (
+                    this.audio.readyState < 3 &&
+                    !this.audio.paused &&
+                    !this.audio.ended
+                ) {
+                    console.warn("[AudioController] Stall grace expired, attempting recovery");
+                    this.attemptStallRecovery();
+                }
+            }, this.STALL_GRACE_MS);
         });
 
         add("error", () => {
@@ -120,16 +164,17 @@ export class AudioController {
                 this.currentSrc
             ) {
                 this.networkRetryCount++;
-                const delay = this.networkRetryCount * 2000;
+                const delay = Math.min(1000 * Math.pow(2, this.networkRetryCount - 1), 8000);
                 console.warn(
                     `[AudioController] Network error, retrying in ${delay}ms (attempt ${this.networkRetryCount}/${this.MAX_NETWORK_RETRIES})`
                 );
                 this.networkRetryTimeout = setTimeout(() => {
                     if (this.currentSrc) {
-                        this.retrySeekTime = this.audio.currentTime || null;
+                        const currentTime = this.audio.currentTime;
+                        this.retrySeekTime = currentTime > 0 ? currentTime : null;
+                        this.autoResumeAfterRecovery = true;
                         this.audio.src = this.currentSrc;
                         this.audio.load();
-                        this.emit("needs-resume");
                     }
                 }, delay);
                 return;
@@ -147,6 +192,80 @@ export class AudioController {
             this.audio.removeEventListener(event, handler);
         }
         this.nativeListeners = [];
+    }
+
+    // -- Stall watchdog --
+
+    private startWatchdog(): void {
+        if (this.watchdogInterval) return;
+        this.lastWatchdogTime = this.audio.currentTime;
+        this.lastTimeChangeAt = Date.now();
+
+        this.watchdogInterval = setInterval(() => {
+            this.checkWatchdog();
+        }, this.WATCHDOG_CHECK_MS);
+    }
+
+    private stopWatchdog(): void {
+        if (this.watchdogInterval) {
+            clearInterval(this.watchdogInterval);
+            this.watchdogInterval = null;
+        }
+        this.lastWatchdogTime = -1;
+    }
+
+    private resetWatchdog(): void {
+        this.lastWatchdogTime = this.audio.currentTime;
+        this.lastTimeChangeAt = Date.now();
+    }
+
+    private checkWatchdog(): void {
+        if (this.audio.paused || this.audio.ended) return;
+
+        const now = Date.now();
+        if (this.audio.currentTime !== this.lastWatchdogTime) {
+            this.lastWatchdogTime = this.audio.currentTime;
+            this.lastTimeChangeAt = now;
+            return;
+        }
+
+        const stalledFor = now - this.lastTimeChangeAt;
+        if (stalledFor >= this.WATCHDOG_STALL_MS) {
+            console.warn(
+                `[AudioController] Watchdog: no progress for ${stalledFor}ms, attempting recovery`
+            );
+            this.attemptStallRecovery();
+        }
+    }
+
+    private attemptStallRecovery(): void {
+        if (!this.currentSrc) return;
+
+        this.cancelStallGrace();
+        this.stopWatchdog();
+
+        this.stallRecoveryCount++;
+        if (this.stallRecoveryCount > this.MAX_STALL_RECOVERIES) {
+            console.error("[AudioController] Max stall recoveries exceeded, giving up");
+            this.emit("error", {
+                error: "Playback stalled repeatedly",
+                code: 2,
+            });
+            return;
+        }
+
+        const currentTime = this.audio.currentTime;
+        this.retrySeekTime = currentTime > 0 ? currentTime : null;
+        this.autoResumeAfterRecovery = true;
+        this.audio.src = this.currentSrc;
+        this.audio.load();
+    }
+
+    private cancelStallGrace(): void {
+        if (this.stallGraceTimeout) {
+            clearTimeout(this.stallGraceTimeout);
+            this.stallGraceTimeout = null;
+        }
     }
 
     async play(): Promise<void> {
@@ -213,6 +332,8 @@ export class AudioController {
         }
 
         this.cancelNetworkRetry();
+        this.stopWatchdog();
+        this.cancelStallGrace();
         this.currentSrc = src;
         this.audio.src = src;
 
@@ -330,11 +451,15 @@ export class AudioController {
             this.networkRetryTimeout = null;
         }
         this.networkRetryCount = 0;
+        this.stallRecoveryCount = 0;
         this.retrySeekTime = null;
+        this.autoResumeAfterRecovery = false;
     }
 
     cleanup(): void {
         this.cancelNetworkRetry();
+        this.stopWatchdog();
+        this.cancelStallGrace();
         this.audio.pause();
         this.audio.removeAttribute("src");
         this.audio.load();

@@ -344,13 +344,41 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
         }
     }, [state, playPodcast, pause]);
 
+    const loadRestoredState = useCallback(() => {
+        const ctrl = controllerRef.current;
+        if (!ctrl || ctrl.getState().currentSrc) return false;
+
+        if (state.playbackType === "track" && state.currentTrack) {
+            ctrl.load(api.getStreamUrl(state.currentTrack.id));
+            return true;
+        }
+        if (state.playbackType === "audiobook" && state.currentAudiobook) {
+            const startTime = state.currentAudiobook.progress?.currentTime || 0;
+            pendingStartTimeRef.current = startTime;
+            playback.setCurrentTime(startTime);
+            ctrl.load(api.getAudiobookStreamUrl(state.currentAudiobook.id));
+            return true;
+        }
+        if (state.playbackType === "podcast" && state.currentPodcast) {
+            const startTime = state.currentPodcast.progress?.currentTime || 0;
+            pendingStartTimeRef.current = startTime;
+            playback.setCurrentTime(startTime);
+            const [podcastId, episodeId] = state.currentPodcast.id.split(":");
+            ctrl.load(api.getPodcastEpisodeStreamUrl(podcastId, episodeId));
+            return true;
+        }
+        return false;
+    }, [state.playbackType, state.currentTrack, state.currentAudiobook, state.currentPodcast, playback]);
+
     const resume = useCallback(() => {
+        loadRestoredState();
         controllerRef.current?.play();
-    }, []);
+    }, [loadRestoredState]);
 
     const resumeWithGesture = useCallback(() => {
+        loadRestoredState();
         controllerRef.current?.play();
-    }, []);
+    }, [loadRestoredState]);
 
     const seek = useCallback(
         (time: number) => {
