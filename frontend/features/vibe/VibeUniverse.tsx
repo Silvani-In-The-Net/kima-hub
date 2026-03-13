@@ -8,7 +8,6 @@ import {
     OrbitControls,
     PointerLockControls,
 } from "@react-three/drei";
-import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { MapTrack } from "./types";
 import { TrackCloud, WORLD_SCALE } from "./TrackCloud";
@@ -143,7 +142,7 @@ function SceneContent({
     highlightedIds,
     selectedTrackId,
     is3D,
-    isMobile,
+    isMobile: _isMobile,
     isLocked,
     onLockChange,
     onTrackClick,
@@ -242,17 +241,6 @@ function SceneContent({
                 <TrackTooltip track={hoveredTrack} position={hoverPosition} />
             )}
 
-            {/* Subtle bloom -- only bright nodes glow slightly */}
-            {!isMobile && (
-                <EffectComposer>
-                    <Bloom
-                        mipmapBlur
-                        intensity={0.25}
-                        luminanceThreshold={0.5}
-                        luminanceSmoothing={0.7}
-                    />
-                </EffectComposer>
-            )}
         </>
     );
 }

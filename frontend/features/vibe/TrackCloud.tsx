@@ -34,8 +34,8 @@ const vertexShader = `
         vColor = customColor;
         vOpacity = opacity;
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = size * (500.0 / -mvPosition.z);
-        gl_PointSize = clamp(gl_PointSize, 2.0, 40.0);
+        gl_PointSize = size * (800.0 / -mvPosition.z);
+        gl_PointSize = clamp(gl_PointSize, 3.0, 64.0);
         gl_Position = projectionMatrix * mvPosition;
     }
 `;
@@ -46,12 +46,12 @@ const fragmentShader = `
     void main() {
         float d = length(gl_PointCoord - vec2(0.5));
         if (d > 0.5) discard;
-        // Sharp digital core with thin neon ring
-        float core = 1.0 - smoothstep(0.0, 0.08, d);
-        float ring = smoothstep(0.12, 0.18, d) * (1.0 - smoothstep(0.18, 0.35, d));
-        float glow = 1.0 - smoothstep(0.0, 0.5, d);
-        float alpha = (core * 1.0 + ring * 0.3 + glow * 0.06) * vOpacity;
-        vec3 color = vColor * (1.0 + core * 0.8);
+        // Solid digital planet -- depth shading with crisp rim
+        float edge = 1.0 - smoothstep(0.44, 0.5, d);
+        float shade = 1.0 - d * 0.4;
+        float rim = smoothstep(0.35, 0.46, d) * edge;
+        vec3 color = vColor * (shade + rim * 0.3);
+        float alpha = edge * vOpacity;
         gl_FragColor = vec4(color, alpha);
     }
 `;
@@ -94,7 +94,7 @@ export function TrackCloud({
             colors[i * 3 + 2] = color.b;
 
             const energy = track.energy ?? 0.5;
-            sizes[i] = 3.0 + energy * 6.0;
+            sizes[i] = 8.0 + energy * 12.0;
             opacities[i] = 0.85;
         }
 
@@ -174,17 +174,17 @@ export function TrackCloud({
             if (isSelected) {
                 colors.setXYZ(i, 0.9, 0.9, 0.9);
                 opacities.setX(i, 1.0);
-                sizes.setX(i, (3.0 + energy * 6.0) * 2.0);
+                sizes.setX(i, (8.0 + energy * 12.0) * 1.8);
             } else if (isHighlighted) {
                 const c = getTrackHighlightColor(track);
                 colors.setXYZ(i, c.r, c.g, c.b);
                 opacities.setX(i, 0.9);
-                sizes.setX(i, 3.0 + energy * 6.0);
+                sizes.setX(i, 8.0 + energy * 12.0);
             } else {
                 const c = getTrackColor(track);
                 colors.setXYZ(i, c.r * 0.4, c.g * 0.4, c.b * 0.4);
                 opacities.setX(i, 0.25);
-                sizes.setX(i, (3.0 + energy * 6.0) * 0.6);
+                sizes.setX(i, (8.0 + energy * 12.0) * 0.6);
             }
         }
 
