@@ -70,12 +70,14 @@ function FlyMovement({ speed = 30 }: { speed?: number }) {
 
 function TronGrid({ worldCenter }: { worldCenter: readonly [number, number, number] }) {
     const material = useMemo(() => {
+        const halfSize = WORLD_SCALE * 2.0;
         return new THREE.ShaderMaterial({
             uniforms: {
-                uCenter: { value: new THREE.Vector2(worldCenter[0], worldCenter[1]) },
-                uGridSpacing: { value: WORLD_SCALE * 0.05 },
-                uFadeRadius: { value: WORLD_SCALE * 1.5 },
-                uColor: { value: new THREE.Color(0.0, 0.35, 0.45) },
+                uCenter: { value: new THREE.Vector3(worldCenter[0], worldCenter[1], 0) },
+                uGridSpacing: { value: WORLD_SCALE * 0.06 },
+                uHalfSize: { value: halfSize },
+                uColorA: { value: new THREE.Color(168 / 255, 85 / 255, 247 / 255) },
+                uColorB: { value: new THREE.Color(252 / 255, 162 / 255, 0) },
             },
             vertexShader: `
                 varying vec3 vWorldPos;
@@ -86,34 +88,52 @@ function TronGrid({ worldCenter }: { worldCenter: readonly [number, number, numb
                 }
             `,
             fragmentShader: `
-                uniform vec2 uCenter;
+                uniform vec3 uCenter;
                 uniform float uGridSpacing;
-                uniform float uFadeRadius;
-                uniform vec3 uColor;
+                uniform float uHalfSize;
+                uniform vec3 uColorA;
+                uniform vec3 uColorB;
                 varying vec3 vWorldPos;
                 void main() {
-                    vec2 coord = vWorldPos.xy / uGridSpacing;
-                    vec2 grid = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
-                    float line = min(grid.x, grid.y);
+                    vec2 cXY = vWorldPos.xy / uGridSpacing;
+                    vec2 gXY = abs(fract(cXY - 0.5) - 0.5) / fwidth(cXY);
+                    float lXY = min(gXY.x, gXY.y);
+
+                    vec2 cXZ = vWorldPos.xz / uGridSpacing;
+                    vec2 gXZ = abs(fract(cXZ - 0.5) - 0.5) / fwidth(cXZ);
+                    float lXZ = min(gXZ.x, gXZ.y);
+
+                    vec2 cYZ = vWorldPos.yz / uGridSpacing;
+                    vec2 gYZ = abs(fract(cYZ - 0.5) - 0.5) / fwidth(cYZ);
+                    float lYZ = min(gYZ.x, gYZ.y);
+
+                    float line = min(lXY, min(lXZ, lYZ));
                     float alpha = 1.0 - min(line, 1.0);
-                    float dist = length(vWorldPos.xy - uCenter) / uFadeRadius;
-                    alpha *= smoothstep(1.0, 0.2, dist);
-                    alpha *= 0.07;
-                    gl_FragColor = vec4(uColor, alpha);
+
+                    float t = smoothstep(-uHalfSize, uHalfSize, vWorldPos.y - uCenter.y);
+                    vec3 color = mix(uColorA, uColorB, t);
+
+                    float dist = length(vWorldPos - uCenter) / (uHalfSize * 1.2);
+                    alpha *= smoothstep(1.0, 0.3, dist);
+                    alpha *= 0.08;
+
+                    gl_FragColor = vec4(color, alpha);
                 }
             `,
             transparent: true,
             depthWrite: false,
-            side: THREE.DoubleSide,
+            side: THREE.BackSide,
         });
     }, [worldCenter]);
 
+    const boxSize = WORLD_SCALE * 4;
+
     return (
         <mesh
-            position={[worldCenter[0], worldCenter[1], -WORLD_SCALE * 0.15]}
+            position={[worldCenter[0], worldCenter[1], 0]}
             material={material}
         >
-            <planeGeometry args={[WORLD_SCALE * 4, WORLD_SCALE * 4]} />
+            <boxGeometry args={[boxSize, boxSize, boxSize]} />
         </mesh>
     );
 }
@@ -227,9 +247,9 @@ function SceneContent({
                 <EffectComposer>
                     <Bloom
                         mipmapBlur
-                        intensity={0.15}
-                        luminanceThreshold={0.7}
-                        luminanceSmoothing={0.5}
+                        intensity={0.25}
+                        luminanceThreshold={0.5}
+                        luminanceSmoothing={0.7}
                     />
                 </EffectComposer>
             )}
