@@ -20,18 +20,6 @@ import { username, password } from "./fixtures/test-helpers";
  *   - Route-level ownership logic (covered by playlists.route.test.ts)
  */
 
-async function apiLogin(
-    page: Parameters<typeof test>[1] extends (args: infer A) => unknown ? never : never,
-    // Use page.request directly from test fixture instead
-    req: { post: (url: string, options?: Record<string, unknown>) => Promise<{ ok: () => boolean; json: () => Promise<unknown> }> },
-    u: string,
-    p: string,
-): Promise<string> {
-    const res = await req.post("/api/auth/login", { data: { username: u, password: p } });
-    if (!res.ok()) throw new Error(`Login failed as ${u}`);
-    return ((await res.json()) as { token: string }).token;
-}
-
 const ATTACKER_USER = `attacker_${Date.now()}`;
 const ATTACKER_PASS = "AttackerPass123!";
 
