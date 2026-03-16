@@ -33,6 +33,11 @@ services:
     # Makes host.docker.internal work on Linux (already works on Docker Desktop)
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Cap memory to prevent host kernel OOM cascade from anon_vma_chain slab exhaustion.
+    # Without this, the host kernel OOM killer fires when Next.js VMA chains accumulate.
+    # 6g is enough for frontend + backend + embeddings + Redis + Postgres.
+    mem_limit: 6g
+    memswap_limit: 8g
     # Fix Redis memory overcommit warning
     sysctls:
       - vm.overcommit_memory=1

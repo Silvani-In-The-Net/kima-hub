@@ -713,9 +713,19 @@ async function runEnrichmentCycle(fullMode: boolean): Promise<{
         }
 
         if (progress.isFullyComplete) {
+            // Flush final audio counter before going idle -- it may be stale because
+            // the update block above only runs when audioQueued > 0.  Once all tracks
+            // are already queued, that block is skipped while Essentia finishes in
+            // the background, leaving the counter frozen at a mid-run snapshot.
             await enrichmentStateService.updateState({
                 status: "idle",
                 currentPhase: null,
+                audio: {
+                    total: progress.audioAnalysis.total,
+                    completed: progress.audioAnalysis.completed,
+                    failed: progress.audioAnalysis.failed,
+                    processing: 0,
+                },
             });
 
             // Pre-compute vibe map projection so it's cached before first page visit

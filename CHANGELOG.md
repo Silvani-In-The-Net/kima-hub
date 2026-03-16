@@ -5,6 +5,39 @@ All notable changes to Kima will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-03-16
+
+### Added
+
+- **Vibe 3D galaxy view**: New immersive "galaxy" toggle on the Vibe page renders your library as a navigable 3D star field using React Three Fiber + Three.js. Tracks are positioned by their vibe embeddings, lit by a dynamic space grid with depth lines, and colored by mood. Double-click any point to play. Camera uses map controls with smooth zoom and pan. Rendered in a dedicated `GravityGridScene` with cluster label billboards, optimized point instancing, and post-processing disabled for GPU performance.
+- **Vibe map pre-compute and KNN acceleration**: Map data is now pre-computed on the backend at enrichment completion rather than on first page load. KNN graph is built incrementally (100-at-a-time) against a pre-sorted index, cutting cold-start time from seconds to milliseconds on large libraries.
+- **GitHub Actions CI pipeline**: Full multi-stage CI across all PRs and pushes to main. Stages: lint + typecheck (frontend + backend), unit tests (Jest), security scan (CodeQL + secrets), E2E predeploy tests (Playwright against a real Docker build), nightly build + push to Docker Hub and GHCR.
+- **E2E enrichment cycle spec**: Playwright test that wipes all enrichment data, triggers a full re-enrich, polls until completion, then asserts track success rate >= 80%, vibe map populated, vibe search returning results, and failure rate < 20%. Skips gracefully when the library has fewer than 10 tracks (CI containers). Companion shell script (`scripts/run-enrichment-memory-test.sh`) captures host SUnreclaim and container RSS before/after and fails the run if slab growth exceeds 1 GB.
+- **E2E vibe spec**: Playwright test covering vibe map load, track selection, song path generation, vibe search, alchemy (track blending), and similar-tracks suggestions.
+- **PWA offline fallback**: Service worker now serves a cached offline page when navigation requests fail. Cached on install alongside the app shell.
+- **PWA update banner**: App detects when a new service worker is waiting and shows a non-blocking "Update available" banner. Clicking it activates the new worker and reloads.
+- **Web app manifest fixes**: `display_override` with `window-controls-overlay` for desktop PWA title bar space. Corrected `scope`, `start_url`, and `id` fields. Added `edge_side_panel` and screenshot metadata.
+
+### Fixed
+
+- **Enrichment: audio counter stale at completion**: `audio.completed` in the Redis state snapshot was frozen at the value from the last `audioQueued > 0` cycle. Once all tracks were queued, the update block was skipped while Essentia continued processing in the background, leaving the counter stuck (e.g. 171/232). The counter is now flushed from the live DB count at the `isFullyComplete` transition before going idle.
+- **Security: double authentication in system settings**: `requireAdmin` already enforces authentication, so the redundant `requireAuth` call before it was removed.
+- **Security: OOM from Next.js VMA accumulation**: The App Router's map-style routes allocate ~15 TB of virtual memory, causing `anon_vma_chain` slab exhaustion on the host kernel. Mitigations: Docker memory cap (`mem_limit: 6g`, `memswap_limit: 8g`) in both compose files; Node 22 in the Dockerfile (V8 improvements reduce anonymous VMAs); `MALLOC_ARENA_MAX=1` for the frontend process (fewer glibc arenas); `NODE_OPTIONS=--max-old-space-size=512` for the frontend (bounds heap to reduce GC-driven VMAs).
+- **Security: DoS vectors patched**: Unbounded enrichment queue, unguarded bulk endpoints, and routes missing rate limits addressed in the production hardening pass.
+- **Security: SSRF vector in webhook callback validation**: Callback URLs are now validated against an allowlist of configured hosts before being followed.
+- **Vibe map accuracy**: SLERP interpolation corrected, similarity formula made consistent between search and map. Distinct mood colors assigned per cluster. ARIA labels added to interactive elements.
+- **Vibe map timer leak**: `setInterval` polling the map data endpoint was not cleared on unmount. Replaced with React Query cache with explicit `staleTime`.
+- **Vibe request ref cleanup**: `vibeRequestRef` was not cleaned up on component unmount, causing stale abort signals on re-mount.
+- **Mobile: full-height vibe page rendering**: CSS height chain corrected from `html`/`body` through layout to vibe page so the map fills the viewport without overflow or clipping on mobile.
+- **Subsonic: `.view` suffix normalization**: Requests from clients that append `.view` to endpoint names (e.g. `getCoverArt.view`) are now normalized before routing. Expanded OpenSubsonic endpoint compatibility.
+- **Service worker: stale styles after rebuild**: SW was caching HTML and CSS documents, causing users to see outdated styles until manual cache clear. HTML and CSS are now excluded from the SW cache entirely.
+- **dead `sourceTrack` variable**: Removed dead variable from vibe request path.
+- **Abort signal not wired to vibe fetch**: Cancelling a vibe search now properly aborts the in-flight fetch.
+
+### Changed
+
+- **vibe-test prototype page removed**: The `/vibe-test` dev sandbox page and its associated R3F prototype components (`VibeUniverse`, `TrackCloud`, `TrackTooltip`, `universeUtils`) have been removed. The production galaxy view lives in `GravityGridScene`.
+
 ## [1.6.4] - 2026-03-12
 
 Fixes #152. Addresses #145.

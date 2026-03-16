@@ -255,7 +255,6 @@ export function TopBar() {
                         title="Notifications"
                     >
                         <Bell className="w-5 h-5" />
-                        {/* TODO: Add notification badge in Phase 3 */}
                     </button>
                 </>
             ) : (

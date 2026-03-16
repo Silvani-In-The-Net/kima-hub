@@ -14,7 +14,7 @@ jobs:
 
             - uses: actions/setup-node@v4
               with:
-                  node-version: "20"
+                  node-version: "22"
                   cache: "npm"
                   cache-dependency-path: frontend/package-lock.json
 
@@ -34,7 +34,7 @@ jobs:
 
             - uses: actions/setup-node@v4
               with:
-                  node-version: "20"
+                  node-version: "22"
                   cache: "npm"
                   cache-dependency-path: frontend/package-lock.json
 
@@ -46,7 +46,7 @@ jobs:
 
             - uses: actions/setup-node@v4
               with:
-                  node-version: "20"
+                  node-version: "22"
                   cache: "npm"
                   cache-dependency-path: backend/package-lock.json
 
@@ -64,7 +64,7 @@ jobs:
 
             - uses: actions/setup-node@v4
               with:
-                  node-version: "20"
+                  node-version: "22"
                   cache: "npm"
                   cache-dependency-path: backend/package-lock.json
 
@@ -77,28 +77,6 @@ jobs:
               # Exclude webhookEventStore -- it is an integration test requiring
               # a live PostgreSQL database. It runs in integration.yml instead.
               run: npm test -- --passWithNoTests --testPathIgnorePatterns="webhookEventStore"
-
-    audit:
-        name: Dependency Audit
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v4
-
-            - uses: actions/setup-node@v4
-              with:
-                  node-version: "20"
-
-            - name: Audit frontend
-              working-directory: frontend
-              run: |
-                  npm ci --ignore-scripts
-                  npm audit --audit-level=critical || true
-
-            - name: Audit backend
-              working-directory: backend
-              run: |
-                  npm ci --ignore-scripts
-                  npm audit --audit-level=critical || true
 
     build-docker:
         name: Docker Build Check

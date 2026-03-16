@@ -27,17 +27,23 @@ HASH=$(docker exec -e "TEST_PASS=${TEST_PASS}" "${CONTAINER}" bash -c '
   "
 ')
 
-# Upsert the user with the generated hash
-docker exec "${CONTAINER}" bash -c "
-  psql -U kima -d kima -c \"
-    INSERT INTO \\\"User\\\" (id, username, \\\"passwordHash\\\", role, \\\"onboardingComplete\\\")
-    VALUES ('e2e_test_user_kima', '${TEST_USER}', '${HASH}', 'user', true)
-    ON CONFLICT (username) DO UPDATE SET \\\"passwordHash\\\" = EXCLUDED.\\\"passwordHash\\\";
-    INSERT INTO \\\"UserSettings\\\" (\\\"userId\\\", \\\"playbackQuality\\\", \\\"wifiOnly\\\", \\\"offlineEnabled\\\", \\\"maxCacheSizeMb\\\")
-    VALUES ('e2e_test_user_kima', 'original', false, false, 10240)
-    ON CONFLICT (\\\"userId\\\") DO NOTHING;
-  \"
-"
+# Write SQL to a temp file inside the container to avoid dollar sign expansion.
+# The bcrypt hash contains $2b$10$... which bash would mangle if embedded in
+# a double-quoted string passed to docker exec.
+docker exec -e "HASH=${HASH}" -e "TEST_USER=${TEST_USER}" "${CONTAINER}" bash -c '
+  # Heredoc is unquoted so ${TEST_USER} and ${HASH} expand (env vars set via -e above).
+  # SQL single quotes are plain literals here -- no shell escaping needed.
+  psql -U kima -d kima <<ENDSQL
+INSERT INTO "User" (id, username, "passwordHash", role, "onboardingComplete")
+VALUES ('\''e2e_test_user_kima'\'', '\''${TEST_USER}'\'', '\''${HASH}'\'', '\''admin'\'', true)
+ON CONFLICT (username) DO UPDATE
+  SET "passwordHash" = EXCLUDED."passwordHash",
+      role = EXCLUDED.role;
+INSERT INTO "UserSettings" ("userId", "playbackQuality", "wifiOnly", "offlineEnabled", "maxCacheSizeMb")
+VALUES ('\''e2e_test_user_kima'\'', '\''original'\'', false, false, 10240)
+ON CONFLICT ("userId") DO NOTHING;
+ENDSQL
+'
 
 echo "[e2e setup] Test user '${TEST_USER}' ready."
 echo ""
