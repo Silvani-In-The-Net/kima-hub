@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DeckGL from "@deck.gl/react";
 import { ScatterplotLayer, TextLayer, LineLayer } from "@deck.gl/layers";
 import { OrthographicView } from "@deck.gl/core";
@@ -80,6 +80,9 @@ export function VibeMap({
             : { target: [0.5, 0.5, 0] as [number, number, number], zoom: 8 };
         return { target: fit.target, zoom: fit.zoom, minZoom: 2, maxZoom: 14 };
     });
+
+    // Clear save timer on unmount to avoid firing into an unmounted component
+    useEffect(() => () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); }, []);
 
     // Only persist camera to sessionStorage after user has actually interacted.
     // DeckGL fires onViewStateChange during init/resize/strict-mode remount with

@@ -10,6 +10,7 @@ const MAX_EMBEDDINGS = 15000;
 const CACHE_KEY = "vibe:map:v3:projection";
 const TRACK_IDS_KEY = "vibe:map:v3:track_ids";
 const CACHE_TTL = 86400;
+const CIRCULAR_CACHE_TTL = 3600; // 1 hour -- refreshes as enrichment adds tracks
 const KNN_NEIGHBORS = 5;
 
 interface MapTrack {
@@ -139,14 +140,14 @@ export async function computeMapProjection(): Promise<MapResponse> {
     }
 }
 
-async function cacheResult(result: MapResponse, trackIds: string[]): Promise<void> {
+async function cacheResult(result: MapResponse, trackIds: string[], ttl = CACHE_TTL): Promise<void> {
     try {
         const pipeline = redisClient.multi();
-        pipeline.setEx(CACHE_KEY, CACHE_TTL, JSON.stringify(result));
+        pipeline.setEx(CACHE_KEY, ttl, JSON.stringify(result));
         pipeline.del(TRACK_IDS_KEY);
         if (trackIds.length > 0) {
             pipeline.sAdd(TRACK_IDS_KEY, trackIds);
-            pipeline.expire(TRACK_IDS_KEY, CACHE_TTL);
+            pipeline.expire(TRACK_IDS_KEY, ttl);
         }
         await pipeline.exec();
     } catch (e) {
@@ -197,7 +198,7 @@ async function buildCircularLayout(rows: (TrackRow & { embedding: string })[]): 
         trackCount: rows.length,
         computedAt: new Date().toISOString(),
     };
-    await cacheResult(result, trackIds);
+    await cacheResult(result, trackIds, CIRCULAR_CACHE_TTL);
     return result;
 }
 
@@ -243,7 +244,9 @@ async function doCompute(): Promise<MapResponse> {
     }
 
     const embeddings: number[][] = rows.map(r => parseEmbedding(r.embedding));
-    const nNeighbors = Math.min(15, Math.max(2, Math.floor(rows.length / 2)));
+    // Scale nNeighbors with library size: sqrt gives balanced local/global structure.
+    // 100 tracks -> 10, 500 tracks -> 22, 1000+ tracks -> 32-50.
+    const nNeighbors = Math.min(50, Math.max(5, Math.round(Math.sqrt(rows.length))));
 
     const projection = await runUmapInWorker(embeddings, nNeighbors);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useVibeMap } from "@/features/vibe/useVibeMap";
 import { VibeMap } from "@/features/vibe/VibeMap";
@@ -11,6 +11,7 @@ import { VibeAlchemy } from "@/features/vibe/VibeAlchemy";
 import { useAudioState } from "@/lib/audio-state-context";
 import { useAudioControls } from "@/lib/audio-controls-context";
 import { api } from "@/lib/api";
+import type { Track, VibeOperation } from "@/lib/audio-state-context";
 import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
 import { Loader2 } from "lucide-react";
 type VibeView = "map" | "galaxy";
@@ -96,10 +97,13 @@ export default function VibePage() {
         } catch { /* noop */ }
         return "map";
     });
+    const [driftSourceId, setDriftSourceId] = useState<string | null>(null);
     const handleViewChange = useCallback((v: VibeView) => {
         setView(v);
+        setDriftSourceId(null);
         try { sessionStorage.setItem("kima_vibe_view", v); } catch { /* noop */ }
     }, []);
+
     const [showLabels, setShowLabels] = useState(() => {
         try { return localStorage.getItem("kima_vibe_labels") !== "false"; } catch { return true; }
     });
@@ -113,18 +117,97 @@ export default function VibePage() {
     const [showPathPicker, setShowPathPicker] = useState(false);
     const [showAlchemy, setShowAlchemy] = useState(false);
     const { currentTrack, queue, activeOperation } = useAudioState();
-    const { playTrack } = useAudioControls();
+    const { playTrack, replaceOperation } = useAudioControls();
     const isMobile = useIsMobile();
     const isTablet = useIsTablet();
     const queueTrackIds = useMemo(() => queue.map(t => t.id), [queue]);
+    const vibeRequestRef = useRef<AbortController | null>(null);
+    const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); }, []);
 
-    const handleTrackClick = useCallback((trackId: string) => {
+    const handleTrackContextMenu = useCallback(async (trackId: string, op: 'vibe' | 'similar' | 'drift') => {
+        if (op === 'drift') {
+            setDriftSourceId(trackId);
+            return;
+        }
+
+        // Cancel any in-flight request from a previous right-click
+        vibeRequestRef.current?.abort();
+        const controller = new AbortController();
+        vibeRequestRef.current = controller;
+
+        try {
+            const response = await api.getVibeSimilarTracks(trackId, 50);
+            if (controller.signal.aborted) return;
+            if (!response.tracks || response.tracks.length === 0) return;
+
+            const sourceTrack = mapData?.tracks.find(t => t.id === trackId);
+            if (!sourceTrack) return;
+
+            const tracks: Track[] = response.tracks.map((t) => ({
+                id: t.id,
+                title: t.title,
+                duration: t.duration,
+                artist: { name: t.artist.name, id: t.artist.id },
+                album: { title: t.album.title, coverArt: t.album.coverUrl ?? undefined, id: t.album.id },
+            }));
+
+            if (op === 'vibe') {
+                const sourceTrackFull = await api.getTrack(trackId);
+                if (controller.signal.aborted) return;
+                if (!sourceTrackFull) return;
+                const newOp: VibeOperation = {
+                    type: 'vibe',
+                    sourceTrackId: trackId,
+                    sourceFeatures: {},
+                    trackIds: [trackId, ...tracks.map(t => t.id)],
+                };
+                await replaceOperation(newOp, [sourceTrackFull, ...tracks], 0);
+            } else {
+                // similar -- highlight on map, no queue replacement
+                setHighlightedIds(new Set(response.tracks.map(t => t.id)));
+                setMode("similar");
+            }
+        } catch {
+            // silently fail (includes abort errors)
+        }
+    }, [mapData, replaceOperation, setHighlightedIds, setMode]);
+
+    // Galaxy is not suitable for mobile -- fall back to map view
+    const effectiveView: VibeView = isMobile && view === "galaxy" ? "map" : view;
+
+    const handleTrackClick = useCallback(async (trackId: string) => {
         if (mode === "path-picking") {
             completePathPicking(trackId);
             return;
         }
+        if (driftSourceId) {
+            const sourceId = driftSourceId;
+            setDriftSourceId(null);
+            try {
+                const result = await api.getVibePath(sourceId, trackId, { length: 12, mode: "smooth" });
+                const allPath = [result.startTrack, ...result.path, result.endTrack];
+                const driftTracks: Track[] = allPath.map((t) => ({
+                    id: t.id,
+                    title: t.title,
+                    duration: t.duration,
+                    artist: { name: t.artistName, id: t.artistId },
+                    album: { title: t.albumTitle, coverArt: t.albumCoverUrl ?? undefined, id: t.albumId },
+                }));
+                const newOp: VibeOperation = {
+                    type: 'drift',
+                    startTrackId: sourceId,
+                    endTrackId: trackId,
+                    pathTrackIds: driftTracks.map(t => t.id),
+                };
+                await replaceOperation(newOp, driftTracks, 0);
+            } catch {
+                // silently fail
+            }
+            return;
+        }
         selectTrack(trackId);
-    }, [mode, selectTrack, completePathPicking]);
+    }, [mode, selectTrack, completePathPicking, driftSourceId, replaceOperation]);
 
     const handleTrackDoubleClick = useCallback(async (trackId: string) => {
         try {
@@ -136,25 +219,28 @@ export default function VibePage() {
     }, [playTrack]);
 
     const handleSearch = useCallback((query: string) => {
-        if (!query || query.length < 2 || !mapData) {
-            setMode((prev) => {
-                if (prev === "search") {
-                    setHighlightedIds(new Set());
-                    return "idle";
-                }
-                return prev;
-            });
-            return;
-        }
-        const lower = query.toLowerCase();
-        const matchIds = new Set<string>();
-        for (const track of mapData.tracks) {
-            if (track.title.toLowerCase().includes(lower) || track.artist.toLowerCase().includes(lower)) {
-                matchIds.add(track.id);
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = setTimeout(() => {
+            if (!query || query.length < 2 || !mapData) {
+                setMode((prev) => {
+                    if (prev === "search") {
+                        setHighlightedIds(new Set());
+                        return "idle";
+                    }
+                    return prev;
+                });
+                return;
             }
-        }
-        setMode("search");
-        setHighlightedIds(matchIds);
+            const lower = query.toLowerCase();
+            const matchIds = new Set<string>();
+            for (const track of mapData.tracks) {
+                if (track.title.toLowerCase().includes(lower) || track.artist.toLowerCase().includes(lower)) {
+                    matchIds.add(track.id);
+                }
+            }
+            setMode("search");
+            setHighlightedIds(matchIds);
+        }, 200);
     }, [mapData, setMode, setHighlightedIds]);
 
     const handlePathMode = useCallback(() => {
@@ -226,7 +312,7 @@ export default function VibePage() {
     return (
         <div className="w-full h-full relative overflow-hidden">
                 <VibeMapErrorBoundary>
-                    {view === "map" ? (
+                    {effectiveView === "map" ? (
                         <VibeMap
                             tracks={mapData.tracks}
                             highlightedIds={highlightedIds}
@@ -236,23 +322,40 @@ export default function VibePage() {
                             trackMap={trackMap}
                             queueTrackIds={queueTrackIds}
                             showLabels={showLabels}
+                            playingTrackId={currentTrack?.id ?? null}
+                            activeOperation={activeOperation}
                             onTrackClick={handleTrackClick}
                             onTrackDoubleClick={handleTrackDoubleClick}
                             onBackgroundClick={handleBackgroundClick}
                         />
                     ) : (
-                        <GalacticMap
-                            tracks={mapData.tracks}
-                            highlightedIds={highlightedIds}
-                            playingTrackId={currentTrack?.id ?? null}
-                            selectedTrackId={selectedTrackId}
-                            queueTrackIds={queueTrackIds}
-                            activeOperation={activeOperation}
-                            showLabels={showLabels}
-                            onTrackClick={handleTrackClick}
-                            onTrackDoubleClick={handleTrackDoubleClick}
-                            onBackgroundClick={handleBackgroundClick}
-                        />
+                        <>
+                            <GalacticMap
+                                tracks={mapData.tracks}
+                                highlightedIds={highlightedIds}
+                                playingTrackId={currentTrack?.id ?? null}
+                                selectedTrackId={selectedTrackId}
+                                queueTrackIds={queueTrackIds}
+                                activeOperation={activeOperation}
+                                showLabels={showLabels}
+                                onTrackClick={handleTrackClick}
+                                onTrackDoubleClick={handleTrackDoubleClick}
+                                onTrackContextMenu={handleTrackContextMenu}
+                                onBackgroundClick={handleBackgroundClick}
+                            />
+                            {driftSourceId && (
+                                <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-black/80 text-white/70 px-4 py-2 rounded-lg text-sm backdrop-blur-sm border border-[#ecb200]/20 flex items-center gap-3">
+                                    <span className="w-2 h-2 rounded-full bg-[#ecb200]/60 animate-pulse" />
+                                    Click destination to begin drift
+                                    <button
+                                        onClick={() => setDriftSourceId(null)}
+                                        className="text-white/30 hover:text-white ml-1 text-xs"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            )}
+                        </>
                     )}
                 </VibeMapErrorBoundary>
 
@@ -264,39 +367,43 @@ export default function VibePage() {
                     onReset={handleClose}
                 />
 
-                <div className="absolute top-[max(3.5rem,calc(env(safe-area-inset-top)+3.5rem))] left-[max(0.75rem,env(safe-area-inset-left))] z-10 flex gap-1 rounded-lg backdrop-blur-md border border-white/8 bg-black/20 p-0.5">
-                    <button
-                        onClick={() => handleViewChange("map")}
-                        className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                            view === "map"
-                                ? "bg-white/10 text-white/70"
-                                : "text-white/30 hover:text-white/50"
-                        }`}
-                    >
-                        Map
-                    </button>
-                    <button
-                        onClick={() => handleViewChange("galaxy")}
-                        className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                            view === "galaxy"
-                                ? "bg-white/10 text-white/70"
-                                : "text-white/30 hover:text-white/50"
-                        }`}
-                    >
-                        Galaxy
-                    </button>
-                    <div className="w-px h-4 self-center bg-white/10" />
-                    <button
-                        onClick={handleToggleLabels}
-                        className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                            showLabels
-                                ? "bg-white/10 text-white/70"
-                                : "text-white/30 hover:text-white/50"
-                        }`}
-                        title={showLabels ? "Hide labels" : "Show labels"}
-                    >
-                        Labels
-                    </button>
+                <div className="absolute top-[max(3.5rem,calc(env(safe-area-inset-top)+3.5rem))] left-[max(0.75rem,env(safe-area-inset-left))] z-10 flex flex-col gap-1">
+                    <div className="flex gap-1 rounded-lg backdrop-blur-md border border-white/8 bg-black/20 p-0.5">
+                        <button
+                            onClick={() => handleViewChange("map")}
+                            className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                                effectiveView === "map"
+                                    ? "bg-white/10 text-white/70"
+                                    : "text-white/30 hover:text-white/50"
+                            }`}
+                        >
+                            Map
+                        </button>
+                        {!isMobile && (
+                            <button
+                                onClick={() => handleViewChange("galaxy")}
+                                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                                    effectiveView === "galaxy"
+                                        ? "bg-white/10 text-white/70"
+                                        : "text-white/30 hover:text-white/50"
+                                }`}
+                            >
+                                Galaxy
+                            </button>
+                        )}
+                        <div className="w-px h-4 self-center bg-white/10" />
+                        <button
+                            onClick={handleToggleLabels}
+                            className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                                showLabels
+                                    ? "bg-white/10 text-white/70"
+                                    : "text-white/30 hover:text-white/50"
+                            }`}
+                            title={showLabels ? "Hide labels" : "Show labels"}
+                        >
+                            Labels
+                        </button>
+                    </div>
                 </div>
 
                 {showPathPicker && (
