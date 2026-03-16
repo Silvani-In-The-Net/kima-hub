@@ -2,31 +2,34 @@
 
 **Updated:** 2026-03-15
 **Current Phase:** Phase 1 -- Core Library
-**Phase Status:** Active, backlog populated, no tasks started
+**Phase Status:** Active, sqlc setup complete, auth service is next
 
 ## Active Task
 
-None -- Phase 1 backlog is ready, waiting to begin first task.
+None -- sqlc task done, waiting to begin auth service.
 
 ## Last Session (2026-03-15)
 
-Phase 0 (Foundation) completed in full:
-- Go module scaffolded (`github.com/Chevron7Locked/kima-go`) with all 14 internal/pkg/api/cmd directories
-- pgxpool + go-redis + caarlos0/env config + slog logging all wired
-- golang-migrate with embedded SQL, full 21-table schema migration
-- Schema integration tests (9 sub-tests): tables, extensions (pg_trgm/vector/unaccent), music_simple FTS config, HNSW indexes, GENERATED columns, constraints, idempotency
-- testcontainers (pgvector:pg16 + redis:7-alpine) for all integration tests
-- Health endpoints (/health, /health/ready) with consumer-defined interfaces for testability
-- CORS, rate limiting, logging middleware -- all with behavior tests
-- golangci-lint: errcheck/govet/staticcheck/depguard/funlen/gocognit + full import boundary enforcement via depguard
-- CI: Lint + Test jobs with race detector; branch ruleset requires both to pass
-- Structure enforcement: file length limits (400/600), api/v1 80-line limit, junk-drawer name detection
-- GitHub repo live at `Chevron7Locked/kima-go`, branch rulesets enforced
-- Phase 1 backlog populated from requirements doc Sections 5, 7, 12, 13
+Phase 0 completed and Phase 1 Task 1 (sqlc setup) completed:
+
+Phase 0 highlights:
+- Full Go module scaffolding, pgxpool + go-redis + caarlos0/env + slog wired
+- golang-migrate with embedded SQL, 21-table initial schema migration
+- testcontainers (pgvector:pg16 + redis:7-alpine), golangci-lint, CI, structure enforcement
+- GitHub repo live at `Chevron7Locked/kima-go`
+
+Phase 1 Task 1 -- sqlc setup:
+- `sqlc.yaml`: three sql sections (library/user/playback), pgx/v5, emit_interface, UUID overrides
+- `migrations/000002_phase1.up.sql`: token_version on users, UNIQUE(file_path) on tracks, api_keys, totp_secrets, track_lyrics tables
+- SQL query files for all three store packages (library/user/playback)
+- Hand-written helpers: TextPtr/Int4Ptr/ErrNotFound/IsNotFound in each store package
+- 20 store integration tests across 3 packages -- all passing
+- `pkg/db/migration_test.go`: 5 new sub-tests for migration 000002 (tables, token_version default, api_keys unique/cascade, file_path unique)
+- `pkg/testutil/containers.go`: retryMigrate() with exponential backoff fixes "connection reset by peer" race on pgvector image startup
 
 ## Next Session Goal
 
-Begin Phase 1, starting with sqlc setup then auth service. First task: configure sqlc and write SQL queries for all library entities.
+Phase 1 Task 2: User auth service -- JWT (access+refresh with token versioning), Redis session storage, API key authentication -- `internal/user/auth.go`
 
 ## Open Questions
 

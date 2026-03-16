@@ -13,6 +13,7 @@
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3030",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:predeploy": "playwright test tests/e2e/predeploy --reporter=list",
     "test:predeploy:ui": "playwright test tests/e2e/predeploy --ui",

@@ -15,7 +15,6 @@
 ### Phase 1: Core Library
 
 **Auth & Users**
-- [ ] sqlc setup: configure sqlc.yaml, write SQL queries for all library entities (tracks, albums, artists, plays, users), run generate -- creates `internal/library/queries/` and `internal/user/queries/`
 - [ ] User auth service: JWT (access+refresh with token versioning), Redis session, API key -- `internal/user/auth.go`
 - [ ] 2FA service: TOTP enrollment + verification, 10 hashed recovery codes -- `internal/user/totp.go`
 - [ ] User management: register (first-user admin flow), login, password change, settings CRUD, onboarding status -- `internal/user/service.go`
@@ -73,6 +72,7 @@
 - [x] Set up testcontainers-go with pgvector/pgvector:pg16 + Redis -- `pkg/testutil/containers.go`
 - [x] Write initial schema migration (21 tables, HNSW indexes, FTS config, GENERATED columns) -- `migrations/000001_initial.up.sql`
 - [x] Integration tests for schema correctness (9 sub-tests: tables, extensions, FTS config, indexes, constraints, GENERATED columns, idempotency) -- `pkg/db/migration_test.go`
+- [x] sqlc setup: sqlc.yaml, 000002 migration (api_keys/totp_secrets/track_lyrics/token_version), SQL query files for library/user/playback stores, helpers (TextPtr/Int4Ptr/ErrNotFound), 20 store integration tests -- `internal/{library,user,playback}/store/`
 - [x] Set up golangci-lint with import boundaries (depguard), complexity limits (funlen/gocognit), correctness linters -- `.golangci.yml`
 - [x] CI: lint job (golangci-lint + structure check) + test job (race detector, testcontainers) -- `.github/workflows/ci.yml`
 - [x] Structure enforcement script: file length limits (400/600), api/v1 80-line limit, junk-drawer name detection -- `scripts/check-structure.sh`

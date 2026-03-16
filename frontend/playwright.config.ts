@@ -7,6 +7,7 @@ export default defineConfig({
     timeout: 60_000,
     expect: { timeout: 15_000 },
     retries: process.env.CI ? 2 : 0,
+    globalSetup: "./tests/e2e/global.setup.ts",
     use: {
         baseURL,
         trace: "retain-on-failure",

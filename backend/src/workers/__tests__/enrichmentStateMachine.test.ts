@@ -25,6 +25,7 @@ jest.mock("../../services/enrichmentState", () => ({
         initializeState: mockInitializeState,
         clear: mockClear,
         detectHang: mockDetectHang,
+        clearGate: jest.fn().mockResolvedValue(undefined),
     },
 }));
 
@@ -221,8 +222,8 @@ describe("Enrichment State Machine", () => {
 
             expect(mockPrismaTrackUpdateMany).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    where: { analysisStatus: "processing" },
-                    data: { analysisStatus: "pending", analysisStartedAt: null },
+                    where: { analysisStatus: { in: ["processing", "queued"] } },
+                    data: expect.objectContaining({ analysisStatus: "pending", analysisStartedAt: null }),
                 }),
             );
         });

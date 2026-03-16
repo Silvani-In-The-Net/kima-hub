@@ -27,6 +27,9 @@ jest.mock('../../../utils/db', () => ({
         downloadJob: {
             findFirst: jest.fn(),
         },
+        unavailableAlbum: {
+            findFirst: jest.fn(),
+        },
     },
 }));
 
@@ -53,11 +56,11 @@ describe('DiscoverySeeding', () => {
         it('should return top played artists with valid MBIDs', async () => {
             // Need at least 5 plays to not trigger fallback
             const recentPlays = [
-                { trackId: 'track-1', _count: { id: 10 } },
-                { trackId: 'track-2', _count: { id: 8 } },
-                { trackId: 'track-3', _count: { id: 7 } },
-                { trackId: 'track-4', _count: { id: 6 } },
-                { trackId: 'track-5', _count: { id: 5 } },
+                { trackId: 'track-1', _count: { id: 10 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-2', _count: { id: 8 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-3', _count: { id: 7 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-4', _count: { id: 6 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-5', _count: { id: 5 }, _max: { playedAt: new Date() } },
             ];
 
             const tracks = [
@@ -111,11 +114,11 @@ describe('DiscoverySeeding', () => {
         it('should filter out artists with temp- MBIDs', async () => {
             // Need at least 5 plays to not trigger fallback
             const recentPlays = [
-                { trackId: 'track-1', _count: { id: 10 } },
-                { trackId: 'track-2', _count: { id: 8 } },
-                { trackId: 'track-3', _count: { id: 7 } },
-                { trackId: 'track-4', _count: { id: 6 } },
-                { trackId: 'track-5', _count: { id: 5 } },
+                { trackId: 'track-1', _count: { id: 10 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-2', _count: { id: 8 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-3', _count: { id: 7 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-4', _count: { id: 6 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-5', _count: { id: 5 }, _max: { playedAt: new Date() } },
             ];
 
             const tracks = [
@@ -170,11 +173,11 @@ describe('DiscoverySeeding', () => {
         it('should filter out artists with null MBIDs', async () => {
             // Need at least 5 plays to not trigger fallback
             const recentPlays = [
-                { trackId: 'track-1', _count: { id: 10 } },
-                { trackId: 'track-2', _count: { id: 8 } },
-                { trackId: 'track-3', _count: { id: 7 } },
-                { trackId: 'track-4', _count: { id: 6 } },
-                { trackId: 'track-5', _count: { id: 5 } },
+                { trackId: 'track-1', _count: { id: 10 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-2', _count: { id: 8 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-3', _count: { id: 7 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-4', _count: { id: 6 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-5', _count: { id: 5 }, _max: { playedAt: new Date() } },
             ];
 
             const tracks = [
@@ -227,51 +230,38 @@ describe('DiscoverySeeding', () => {
         });
 
         it('should handle empty listening history by falling back to library', async () => {
-            const albumGroups = [
-                { artistId: 'artist-1', _count: { id: 5 } },
-                { artistId: 'artist-2', _count: { id: 3 } },
-            ];
-
+            // getFallbackSeedArtists now uses artist.findMany with included albums
             const artists = [
-                { id: 'artist-1', name: 'Library Artist One', mbid: 'lib-mbid-1' },
-                { id: 'artist-2', name: 'Library Artist Two', mbid: 'lib-mbid-2' },
+                { id: 'artist-1', name: 'Library Artist One', mbid: 'lib-mbid-1', albums: [{ _count: { tracks: 5 } }] },
+                { id: 'artist-2', name: 'Library Artist Two', mbid: 'lib-mbid-2', albums: [{ _count: { tracks: 3 } }] },
             ];
 
             (mockPrisma.play.groupBy as jest.Mock).mockResolvedValue([]);
-            (mockPrisma.album.groupBy as jest.Mock).mockResolvedValue(albumGroups);
             (mockPrisma.artist.findMany as jest.Mock).mockResolvedValue(artists);
 
             const result = await seeding.getSeedArtists(userId);
 
             expect(result).toHaveLength(2);
             expect(result[0]).toEqual({ name: 'Library Artist One', mbid: 'lib-mbid-1' });
-            expect(mockPrisma.album.groupBy).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    where: { location: 'LIBRARY' },
-                })
-            );
+            expect(mockPrisma.artist.findMany).toHaveBeenCalled();
         });
 
         it('should fall back to library when fewer than 5 recent plays', async () => {
             const recentPlays = [
-                { trackId: 'track-1', _count: { id: 2 } },
+                { trackId: 'track-1', _count: { id: 2 }, _max: { playedAt: new Date() } },
             ];
 
-            const albumGroups = [
-                { artistId: 'artist-1', _count: { id: 5 } },
-            ];
-
+            // getFallbackSeedArtists uses artist.findMany (not album.groupBy)
             const artists = [
-                { id: 'artist-1', name: 'Library Artist', mbid: 'lib-mbid-1' },
+                { id: 'artist-1', name: 'Library Artist', mbid: 'lib-mbid-1', albums: [{ _count: { tracks: 5 } }] },
             ];
 
             (mockPrisma.play.groupBy as jest.Mock).mockResolvedValue(recentPlays);
-            (mockPrisma.album.groupBy as jest.Mock).mockResolvedValue(albumGroups);
             (mockPrisma.artist.findMany as jest.Mock).mockResolvedValue(artists);
 
             const result = await seeding.getSeedArtists(userId);
 
-            expect(mockPrisma.album.groupBy).toHaveBeenCalled();
+            expect(mockPrisma.artist.findMany).toHaveBeenCalled();
             expect(result[0].name).toBe('Library Artist');
         });
 
@@ -279,6 +269,7 @@ describe('DiscoverySeeding', () => {
             const recentPlays = Array.from({ length: 20 }, (_, i) => ({
                 trackId: `track-${i}`,
                 _count: { id: 20 - i },
+                _max: { playedAt: new Date() },
             }));
 
             const tracks = Array.from({ length: 20 }, (_, i) => ({
@@ -300,11 +291,11 @@ describe('DiscoverySeeding', () => {
         it('should deduplicate artists from multiple tracks', async () => {
             // Need at least 5 plays to not trigger fallback
             const recentPlays = [
-                { trackId: 'track-1', _count: { id: 10 } },
-                { trackId: 'track-2', _count: { id: 8 } },
-                { trackId: 'track-3', _count: { id: 5 } },
-                { trackId: 'track-4', _count: { id: 4 } },
-                { trackId: 'track-5', _count: { id: 3 } },
+                { trackId: 'track-1', _count: { id: 10 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-2', _count: { id: 8 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-3', _count: { id: 5 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-4', _count: { id: 5 }, _max: { playedAt: new Date() } },
+                { trackId: 'track-5', _count: { id: 6 }, _max: { playedAt: new Date() } },
             ];
 
             const tracks = [

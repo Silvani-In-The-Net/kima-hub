@@ -1,0 +1,104 @@
+name: Security Checks
+
+on:
+    pull_request:
+        branches: [main]
+    schedule:
+        - cron: "0 2 * * 0"
+    workflow_dispatch:
+
+jobs:
+    dependency-audit:
+        name: Dependency Audit
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+
+            - name: Audit frontend (critical only)
+              working-directory: frontend
+              run: |
+                  npm ci --ignore-scripts
+                  npm audit --audit-level=critical
+
+            - name: Audit backend (critical only)
+              working-directory: backend
+              run: |
+                  npm ci --ignore-scripts
+                  npm audit --audit-level=critical
+
+    security-e2e:
+        name: Security E2E Tests
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Build Docker image
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  push: false
+                  load: true
+                  tags: kima:security
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+
+            - name: Start Kima stack
+              run: |
+                  docker run -d \
+                    --name kima-security \
+                    -p 3030:3030 \
+                    -p 3006:3006 \
+                    -v kima_security_data:/data \
+                    kima:security
+                  timeout 90 bash -c 'until curl -sf http://localhost:3030/api/health; do sleep 3; done'
+
+            - name: Create test user
+              run: bash scripts/create-e2e-user.sh
+              env:
+                  KIMA_CONTAINER: kima-security
+                  KIMA_TEST_USERNAME: ${{ secrets.KIMA_TEST_USERNAME }}
+                  KIMA_TEST_PASSWORD: ${{ secrets.KIMA_TEST_PASSWORD }}
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+                  cache: "npm"
+                  cache-dependency-path: frontend/package-lock.json
+
+            - name: Install Playwright
+              working-directory: frontend
+              run: |
+                  npm ci
+                  npx playwright install --with-deps chromium
+
+            - name: Run security spec
+              working-directory: frontend
+              run: npx playwright test tests/e2e/security.spec.ts --reporter=list
+              env:
+                  KIMA_TEST_USERNAME: ${{ secrets.KIMA_TEST_USERNAME }}
+                  KIMA_TEST_PASSWORD: ${{ secrets.KIMA_TEST_PASSWORD }}
+                  KIMA_UI_BASE_URL: http://127.0.0.1:3030
+
+            - name: Upload results on failure
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: security-test-results-${{ github.run_id }}
+                  path: frontend/test-results/
+                  retention-days: 7
+
+            - name: Stop stack
+              if: always()
+              run: |
+                  docker stop kima-security || true
+                  docker rm kima-security || true
+                  docker volume rm kima_security_data || true

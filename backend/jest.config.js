@@ -10,4 +10,9 @@ module.exports = {
     transformIgnorePatterns: [
         'node_modules/(?!(p-queue|eventemitter3)/)',
     ],
+    moduleNameMapper: {
+        // p-queue is pure ESM and cannot be required() by Jest's CJS runner.
+        // Map it to a minimal CJS mock that executes functions immediately.
+        '^p-queue$': '<rootDir>/src/__mocks__/p-queue.cjs',
+    },
 };
