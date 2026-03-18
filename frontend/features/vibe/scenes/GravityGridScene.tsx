@@ -39,7 +39,7 @@ const COLOR_SELECTED   = new THREE.Color(0.90, 0.92, 0.96);
 const COLOR_HIGHLIGHT  = new THREE.Color(0.75, 0.85, 1.0 );
 const COLOR_QUEUE      = new THREE.Color(0.988, 0.635, 0.0);
 const COLOR_QUEUE_PAST = new THREE.Color(0.18,  0.11,  0.0); // played -- dim amber
-const COLOR_DIMMED     = new THREE.Color(0.22, 0.23, 0.26);
+const COLOR_DIMMED     = new THREE.Color(0.35, 0.36, 0.40);
 
 const _scratchVec3 = new THREE.Vector3();
 // Module-lifetime singletons -- GravityGridScene is mounted once per page session, so these are never leaked.
@@ -903,7 +903,7 @@ function SceneContent({
     animated: boolean;
     onLockChange: (locked: boolean) => void;
     onShowContextMenu?: (trackId: string, x: number, y: number) => void;
-    onRecenterRef: React.MutableRefObject<(() => void) | null>;
+    onRecenterRef: React.RefObject<(() => void) | null>;
 }) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const controlsRef = useRef<any>(null);

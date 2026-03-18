@@ -377,15 +377,15 @@ export function VibeMap({
     const trackNameLayer = useMemo(() => {
         if (!showLabels || zoom < 11.5) return null;
 
-        const offsetY = 16 / Math.pow(2, zoom);
+        const offsetY = 10 / Math.pow(2, zoom);
 
         return new TextLayer<MapTrack>({
             id: "track-names",
             data: tracks,
             getPosition: (d) => [d.x, d.y + offsetY],
             getText: (d) => d.title,
-            getSize: 9,
-            getColor: [255, 255, 255, 55],
+            getSize: 10,
+            getColor: [255, 255, 255, 90],
             fontFamily: "Montserrat, system-ui, sans-serif",
             fontWeight: 400,
             getTextAnchor: "middle" as const,

@@ -128,10 +128,10 @@ export function computeClusterLabels(
 }
 
 function baseRadiusForZoom(zoom: number): number {
-    if (zoom < 6) return 3.5;
-    if (zoom < 8) return 4.5 + (zoom - 6) * 1.5;
-    if (zoom < 10) return 7.5 + (zoom - 8) * 2.5;
-    return 12.5 + (zoom - 10) * 2.5;
+    if (zoom < 6) return 2.8;
+    if (zoom < 8) return 3.5 + (zoom - 6) * 1.2;
+    if (zoom < 10) return 5.9 + (zoom - 8) * 2.0;
+    return 9.9 + (zoom - 10) * 2.0;
 }
 
 export function getTrackRadius(track: MapTrack, zoom: number): number {
