@@ -9,7 +9,7 @@ import { musicBrainzService } from "../services/musicbrainz";
 import { normalizeArtistName } from "../utils/artistNormalization";
 import { coverArtService } from "../services/coverArt";
 import { redisClient } from "../utils/redis";
-import { downloadAndStoreImage, isNativePath } from "../services/imageStorage";
+import { downloadAndStoreImage, isNativePath, nativeFileExists } from "../services/imageStorage";
 
 /**
  * Enriches an artist with metadata from Wikidata and Last.fm
@@ -86,7 +86,10 @@ export async function enrichSimilarArtist(artist: Artist): Promise<void> {
         // Try Wikidata first (only if we have a real MBID)
         // Preserve existing heroUrl (e.g., from local file found during scan)
         let summary = null;
-        let heroUrl = artist.heroUrl || null;
+        // Only preserve existing heroUrl if the file actually exists on disk
+        let heroUrl = (artist.heroUrl && (!isNativePath(artist.heroUrl) || nativeFileExists(artist.heroUrl)))
+            ? artist.heroUrl
+            : null;
         let genres: string[] = [];
 
         if (!artist.mbid.startsWith("temp-")) {
@@ -291,11 +294,12 @@ export async function enrichSimilarArtist(artist: Artist): Promise<void> {
                 : null;
 
         // Re-read current heroUrl to avoid clobbering scanner-written local images
+        // But only if the file actually exists on disk
         const currentArtist = await prisma.artist.findUnique({
             where: { id: artist.id },
             select: { heroUrl: true },
         });
-        const finalHeroUrl = (currentArtist?.heroUrl && isNativePath(currentArtist.heroUrl))
+        const finalHeroUrl = (currentArtist?.heroUrl && isNativePath(currentArtist.heroUrl) && nativeFileExists(currentArtist.heroUrl))
             ? currentArtist.heroUrl
             : localHeroUrl;
 
@@ -408,17 +412,21 @@ async function enrichAlbumCovers(
 ): Promise<void> {
     try {
         // Find albums for this artist that don't have cover art
-        const albumsWithoutCovers = await prisma.album.findMany({
+        // Find albums with no cover, or with a native cover file missing from disk
+        const allAlbums = await prisma.album.findMany({
             where: {
                 artistId,
-                OR: [{ coverUrl: null }, { coverUrl: "" }],
             },
             select: {
                 id: true,
                 rgMbid: true,
                 title: true,
+                coverUrl: true,
             },
         });
+        const albumsWithoutCovers = allAlbums.filter(
+            (a) => !a.coverUrl || a.coverUrl === "" || (isNativePath(a.coverUrl) && !nativeFileExists(a.coverUrl))
+        );
 
         if (albumsWithoutCovers.length === 0) {
             logger.debug(`    All albums already have covers`);
