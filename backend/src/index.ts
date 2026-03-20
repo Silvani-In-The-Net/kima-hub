@@ -50,7 +50,6 @@ import { requireAuth, requireAdmin } from "./middleware/auth";
 import {
     authLimiter,
     apiLimiter,
-    imageLimiter,
 } from "./middleware/rateLimiter";
 const app = express();
 
@@ -183,15 +182,15 @@ app.use("/api/events", eventsRoutes);
 app.use("/rest", subsonicRouter);
 
 // Health check (keep at root for simple container health checks)
-app.get("/health", (req, res) => {
+app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
 });
-app.get("/api/health", (req, res) => {
+app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
 });
 
 // Prometheus metrics endpoint
-app.get("/api/metrics", requireAuth, async (req, res) => {
+app.get("/api/metrics", requireAuth, async (_req, res) => {
     try {
         const { getMetrics } = await import("./utils/metrics");
         res.set("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
@@ -274,14 +273,15 @@ async function checkPasswordReset() {
     logger.warn("[Password Reset] Admin password has been reset via ADMIN_RESET_PASSWORD env var. Remove this env var and restart.");
 }
 
-app.listen(config.port, "0.0.0.0", async () => {
-    // Verify database connections before proceeding
+async function main() {
+    // Verify database connections before accepting traffic
     await checkPostgresConnection();
     await checkRedisConnection();
 
     // Check for admin password reset
     await checkPasswordReset();
 
+    app.listen(config.port, "0.0.0.0", async () => {
     logger.debug(
         `Kima API running on port ${config.port} (accessible on all network interfaces)`
     );
@@ -492,6 +492,12 @@ app.listen(config.port, "0.0.0.0", async () => {
         }
     })();
 });
+}
+
+main().catch((err) => {
+    logger.error("Server failed to start:", err);
+    process.exit(1);
+});
 
 // Graceful shutdown handling
 let isShuttingDown = false;
@@ -552,7 +558,7 @@ process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // Global error handlers to prevent silent crashes
-process.on("unhandledRejection", (reason, promise) => {
+process.on("unhandledRejection", (reason, _promise) => {
     logger.error("Unhandled Promise Rejection:", {
         reason: reason instanceof Error ? reason.message : String(reason),
         stack: reason instanceof Error ? reason.stack : undefined,

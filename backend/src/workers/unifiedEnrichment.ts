@@ -89,9 +89,7 @@ async function clearPauseState(): Promise<void> {
     await enrichmentStateService.clearGate();
     // Resume the Python audio analyzer in case it was paused by a prior stop
     try {
-        const pub = new Redis(config.redisUrl);
-        await pub.publish(AUDIO_ANALYSIS_CONTROL_CHANNEL, "resume");
-        await pub.quit();
+        await enrichmentStateService.publishToChannel(AUDIO_ANALYSIS_CONTROL_CHANNEL, "resume");
     } catch (err) {
         logger.warn(`[Enrichment] Failed to resume audio analyzer: ${(err as Error).message}`);
     }
@@ -1629,7 +1627,7 @@ export async function triggerEnrichmentNow(): Promise<{
      immediateEnrichmentRequested = true;
 
      // Run full cycle but it will stop after artists phase if paused/stopped
-     const cycleResult = await runEnrichmentCycle(false);
+     await runEnrichmentCycle(false);
 
      return { count: result.count };
  }
@@ -1647,7 +1645,7 @@ export async function triggerEnrichmentNow(): Promise<{
      await clearPauseState();
      immediateEnrichmentRequested = true;
 
-     const cycleResult = await runEnrichmentCycle(false);
+     await runEnrichmentCycle(false);
 
      return { count: result.count };
  }

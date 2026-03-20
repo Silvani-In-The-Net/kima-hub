@@ -998,7 +998,7 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
 
             try {
                 const [podcastId, episodeId] = podcast.id.split(":");
-                await api.updatePodcastProgress(
+                await api.updatePodcastEpisodeProgress(
                     podcastId,
                     episodeId,
                     isFinished ? duration : currentTime,

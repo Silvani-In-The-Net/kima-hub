@@ -1,6 +1,5 @@
 import dotenv from "dotenv";
 import { z } from "zod";
-import * as fs from "fs";
 import { validateMusicConfig, MusicConfig } from "./utils/configValidator";
 import { logger } from "./utils/logger";
 import packageJson from "../package.json";
@@ -90,11 +89,6 @@ export const config = {
     // Last.fm
     lastfm: {
         apiKey: process.env.LASTFM_API_KEY || "c1797de6bf0b7e401b623118120cd9e1",
-    },
-
-    // OpenAI - reads from database
-    openai: {
-        apiKey: process.env.OPENAI_API_KEY || "", // Fallback to DB
     },
 
     allowedOrigins:

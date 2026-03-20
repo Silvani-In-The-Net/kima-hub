@@ -82,6 +82,7 @@ export const getApiBaseUrl = () => {
 class ApiClient {
     private token: string | null = null;
     private tokenInitialized: boolean = false;
+    private refreshPromise: Promise<boolean> | null = null;
 
     constructor() {
         // Try to load token synchronously
@@ -159,10 +160,20 @@ class ApiClient {
     }
 
     /**
-     * Refresh the access token using the refresh token
-     * @returns true if refresh succeeded, false otherwise
+     * Refresh the access token using the refresh token.
+     * Deduplicates concurrent refresh calls -- all concurrent 401s share one refresh attempt.
      */
     private async refreshAccessToken(): Promise<boolean> {
+        if (this.refreshPromise) return this.refreshPromise;
+        this.refreshPromise = this._doRefresh();
+        try {
+            return await this.refreshPromise;
+        } finally {
+            this.refreshPromise = null;
+        }
+    }
+
+    private async _doRefresh(): Promise<boolean> {
         const refreshToken = this.getRefreshToken();
         if (!refreshToken) {
             return false;
@@ -180,14 +191,12 @@ class ApiClient {
             );
 
             if (!response.ok) {
-                // Refresh token invalid or expired - clear tokens
                 this.clearToken();
                 return false;
             }
 
             const data = await response.json();
 
-            // Store new tokens
             if (data.token) {
                 this.setToken(data.token, data.refreshToken);
                 return true;
@@ -1099,22 +1108,6 @@ class ApiClient {
                 method: "POST",
                 body: JSON.stringify({ currentTime, duration, isFinished }),
             }
-        );
-    }
-
-    async updatePodcastProgress(
-        podcastId: string,
-        episodeId: string,
-        currentTime: number,
-        duration: number,
-        isFinished: boolean = false
-    ) {
-        return this.updatePodcastEpisodeProgress(
-            podcastId,
-            episodeId,
-            currentTime,
-            duration,
-            isFinished
         );
     }
 

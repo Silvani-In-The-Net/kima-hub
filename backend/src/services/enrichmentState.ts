@@ -294,6 +294,14 @@ class EnrichmentStateService {
     }
 
     /**
+     * Publish a message to a Redis channel using the shared publisher connection.
+     * Use this instead of creating ephemeral Redis connections.
+     */
+    async publishToChannel(channel: string, message: string): Promise<void> {
+        await this.publisher.publish(channel, message);
+    }
+
+    /**
      * Cleanup connections
      */
     async disconnect(): Promise<void> {
