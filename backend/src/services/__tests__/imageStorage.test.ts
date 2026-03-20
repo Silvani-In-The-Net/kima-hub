@@ -10,7 +10,7 @@ jest.mock("../../config", () => ({
     USER_AGENT: "Kima/test",
 }));
 
-import { nativeFileExists, isNativePath } from "../imageStorage";
+import { nativeFileExists } from "../imageStorage";
 
 describe("nativeFileExists", () => {
     const coversBase = "/tmp/kima-test-cache/covers";
