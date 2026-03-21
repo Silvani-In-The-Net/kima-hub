@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - nightly
 
+## [1.7.4] - 2026-03-21
+
+### Fixed
+
+- **Search returns no results for common words ("the", "a", etc.)**: PostgreSQL FTS drops English stop words, so `to_tsquery('english', 'the:*')` silently returns zero rows without raising an error -- meaning the ILIKE fallback never triggered. All three search paths (artists, albums, tracks) now fall through to ILIKE when FTS returns an empty result set.
+- **`/health` endpoint returns no diagnostic detail**: Both `/health` and `/api/health` previously returned only `{"status":"ok"}` regardless of dependency state. They now ping PostgreSQL and Redis, return `uptime`, `version`, `db`, and `redis` fields, and respond with HTTP 503 when either dependency is unavailable.
+
 ### Changed
 
 - **TypeScript strict mode enabled (frontend)**: `"strict": true` in `frontend/tsconfig.json`. Fixed 31 implicit-any and strictNullChecks errors across album/artist/podcast pages, MetadataEditor, AlbumHero, ArtistHero, ArtistActionBar, AvailableAlbums, useDiscoverData, LibraryAlbumsGrid, LibraryTracksList, UnifiedSongsList, CacheSection, useQueries, useTVNavigation.
@@ -16,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Startup task consolidation**: Three concurrent IIFE startup tasks (audiobook sync, artist counts backfill, image backfill) consolidated into a sequential `runStartupTasks()` function to avoid overwhelming DB connections at startup.
 - **Dead code removal**: Removed unused `ffmpeg-static` dependency (not imported anywhere); added `prebuild` script to clean `dist/` before each build.
 
-### Fixed
+### Fixed (internal)
 
 - **enrichmentStateMachine tests**: Updated mock for `enrichmentStateService` to include `publishToChannel` method. Tests for Python analyzer C2 bridge now correctly assert against `publishToChannel` instead of raw Redis `publish` (which was never called after the ioredis consolidation refactored the channel through the service layer).
 

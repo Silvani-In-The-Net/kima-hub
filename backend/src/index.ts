@@ -182,12 +182,34 @@ app.use("/api/events", eventsRoutes);
 app.use("/rest", subsonicRouter);
 
 // Health check (keep at root for simple container health checks)
-app.get("/health", (_req, res) => {
-    res.json({ status: "ok" });
-});
-app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok" });
-});
+async function healthHandler(_req: express.Request, res: express.Response) {
+    const checks: Record<string, string> = {};
+
+    try {
+        await prisma.$queryRaw`SELECT 1`;
+        checks.db = "ok";
+    } catch {
+        checks.db = "error";
+    }
+
+    try {
+        await redisClient.ping();
+        checks.redis = "ok";
+    } catch {
+        checks.redis = "error";
+    }
+
+    const allOk = Object.values(checks).every((v) => v === "ok");
+    res.status(allOk ? 200 : 503).json({
+        status: allOk ? "ok" : "degraded",
+        uptime: Math.floor(process.uptime()),
+        version: config.version,
+        ...checks,
+    });
+}
+
+app.get("/health", healthHandler);
+app.get("/api/health", healthHandler);
 
 // Prometheus metrics endpoint
 app.get("/api/metrics", requireAuth, async (_req, res) => {

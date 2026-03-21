@@ -174,7 +174,7 @@ export class SearchService {
         OFFSET ${offset}
       `;
 
-            return results;
+            return results.length > 0 ? results : this.searchArtistsFallback({ query, limit, offset });
         } catch (error) {
             logger.error("Artist search error:", error);
             return this.searchArtistsFallback({ query, limit, offset });
@@ -287,7 +287,7 @@ export class SearchService {
         OFFSET ${offset}
       `;
 
-            return results;
+            return results.length > 0 ? results : this.searchAlbumsFallback({ query, limit, offset });
         } catch (error) {
             logger.error("Album search error:", error);
             return this.searchAlbumsFallback({ query, limit, offset });
@@ -376,7 +376,7 @@ export class SearchService {
         OFFSET ${offset}
       `;
 
-            return results;
+            return results.length > 0 ? results : this.searchTracksFallback({ query, limit, offset });
         } catch (error) {
             logger.error("Track search error:", error);
             return this.searchTracksFallback({ query, limit, offset });
