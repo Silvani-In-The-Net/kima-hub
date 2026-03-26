@@ -4,6 +4,8 @@
 [![GitHub Release](https://img.shields.io/github/v/release/Chevron7Locked/kima-hub?label=Release)](https://github.com/Chevron7Locked/kima-hub/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
+### A Personal fork where I want to test Intel A380 integration along with internal IP whitelisting as the current implimentation is docker monolithic 
+
 A self-hosted, on-demand audio streaming platform that brings the Spotify experience to your personal music library.
 
 Kima is built for music lovers who want the convenience of streaming services without sacrificing ownership of their library. Point it at your music collection, and Kima handles the rest: artist discovery, personalized playlists, podcast subscriptions, and seamless integration with tools you already use like Lidarr and Audiobookshelf.
