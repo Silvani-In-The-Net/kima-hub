@@ -260,6 +260,9 @@ services:
             redis:
                 condition: service_healthy
         restart: unless-stopped
+        # Intel GPU passthrough (uncomment for Arc GPUs)
+        devices:
+            - /dev/dri:/dev/dri
         # Memory limits prevent OOM kills (Issue #26 fix)
         # 6G limit = safe for 2 workers at 2-3GB peak each
         # 2G reservation = minimum guaranteed memory
@@ -305,6 +308,9 @@ services:
                 condition: service_healthy
                 required: false  # Allow CLAP to start even if MusicCNN is disabled
         restart: unless-stopped
+        # Intel GPU passthrough (uncomment for Arc GPUs)
+        devices:
+            - /dev/dri:/dev/dri
         deploy:
             resources:
                 limits:

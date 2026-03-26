@@ -389,6 +389,7 @@ The unified Kima container handles most configuration automatically. Here are th
 | `AUDIO_MODEL_IDLE_TIMEOUT`         | `300`                              | Seconds before unloading idle ML models to free memory (0 = never unload)    |
 | `LOG_LEVEL`                         | `warn` (prod) / `debug` (dev)      | Logging verbosity: debug, info, warn, error, silent                         |
 | `DOCS_PUBLIC`                       | `false`                            | Set to `true` to allow public access to API docs in production              |
+| `SSRF_ALLOWED_HOSTS`               | (empty)                            | Comma-separated list of IPs/hostnames to whitelist for SSRF protection      |
 
 The music library path is configured via Docker volume mount (`-v /path/to/music:/music`).
 
@@ -404,6 +405,19 @@ And add your domain to the allowed origins:
 
 ```env
 ALLOWED_ORIGINS=http://localhost:3030,https://kima.yourdomain.com
+```
+
+#### SSRF Protection
+
+Kima blocks internal IP addresses (192.168.x.x, 10.x.x.x, etc.) for server-side fetches to prevent SSRF attacks. If you need to connect to a service in another container or on your LAN, whitelist it:
+
+```env
+SSRF_ALLOWED_HOSTS=192.168.50.109
+```
+
+Multiple hosts can be comma-separated:
+```env
+SSRF_ALLOWED_HOSTS=192.168.50.109,lidarr.internal.local,10.0.0.50
 ```
 
 ---

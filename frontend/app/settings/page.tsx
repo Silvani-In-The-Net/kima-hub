@@ -24,12 +24,14 @@ import { StoragePathsSection } from "@/features/settings/components/sections/Sto
 import { CacheSection } from "@/features/settings/components/sections/CacheSection";
 import { UserManagementSection } from "@/features/settings/components/sections/UserManagementSection";
 import { CorruptTracksSection } from "@/features/settings/components/sections/CorruptTracksSection";
+import { GpuStatusSection } from "@/features/settings/components/sections/GpuStatusSection";
 
 // Define sidebar items
 const sidebarItems: SidebarItem[] = [
     { id: "account", label: "Account" },
     { id: "subsonic", label: "Native Apps" },
     { id: "playback", label: "Playback" },
+    { id: "gpu", label: "GPU Acceleration", adminOnly: true },
     { id: "download-preferences", label: "Download Preferences", adminOnly: true },
     { id: "lidarr", label: "Download Services", adminOnly: true },
     { id: "audiobookshelf", label: "Media Servers", adminOnly: true },
@@ -145,6 +147,9 @@ export default function SettingsPage() {
                     value={userSettings.playbackQuality}
                     onChange={(quality) => updateUserSettings({ playbackQuality: quality })}
                 />
+
+                {/* GPU Acceleration Status - Admin only */}
+                {isAdmin && <GpuStatusSection />}
 
                 {/* Admin-only sections */}
                 {isAdmin && (

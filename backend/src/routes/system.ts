@@ -19,4 +19,18 @@ router.get("/features", requireAuth, async (req, res) => {
     }
 });
 
+/**
+ * GET /api/system/gpu
+ * Returns GPU status and configuration for audio analysis services
+ */
+router.get("/gpu", requireAuth, async (req, res) => {
+    try {
+        const gpuStatus = await featureDetection.getGpuStatus();
+        res.json(gpuStatus);
+    } catch (error: any) {
+        logger.error("GPU status error:", error);
+        res.status(500).json({ error: "Failed to detect GPU" });
+    }
+});
+
 export default router;

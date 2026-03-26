@@ -45,7 +45,19 @@ os.environ['NUMEXPR_MAX_THREADS'] = str(THREADS_PER_WORKER)
 import torch
 torch.set_num_threads(THREADS_PER_WORKER)
 
-DEVICE = torch.device('cpu')
+def get_best_device():
+    """Auto-detect best available device: Intel XPU > NVIDIA CUDA > CPU"""
+    if hasattr(torch, 'xpu') and torch.xpu.is_available():
+        logger.info("Intel XPU GPU detected")
+        return torch.device('xpu')
+    elif torch.cuda.is_available():
+        logger.info("NVIDIA CUDA GPU detected")
+        return torch.device('cuda')
+    else:
+        logger.info("Running on CPU (no GPU detected)")
+        return torch.device('cpu')
+
+DEVICE = get_best_device()
 
 import redis
 import psycopg2
@@ -119,7 +131,8 @@ class CLAPAnalyzer:
                 self._model_loaded = True
                 self.last_work_time = time.time()
 
-                logger.info("CLAP model loaded successfully on CPU")
+                device_type = DEVICE.type.upper()
+                logger.info(f"CLAP model loaded successfully on {device_type}")
             except Exception as e:
                 logger.error(f"Failed to load CLAP model: {e}")
                 traceback.print_exc()

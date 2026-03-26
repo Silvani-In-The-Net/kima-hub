@@ -18,11 +18,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
     curl \
+    intel-opencl-icd \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies
+# Install Python dependencies (standard CPU PyTorch)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -40,6 +41,19 @@ RUN python -c "import laion_clap; model = laion_clap.CLAP_Module(enable_fusion=F
 # Copy application code
 COPY analyzer.py .
 
+# Create entrypoint that installs XPU torch at runtime if Intel GPU is available
+COPY <<EOF /entrypoint.sh
+#!/bin/bash
+set -e
+# Install Intel XPU PyTorch at runtime if /dev/dri exists
+if [ -e /dev/dri ]; then
+    echo "Intel GPU detected - installing PyTorch with XPU support..."
+    pip install --no-cache-dir torch --extra-index-url https://download.pytorch.org/whl/xpu || true
+fi
+exec "$@"
+EOF
+RUN chmod +x /entrypoint.sh
+
 # Create non-root user
 RUN useradd -m -u 1000 analyzer && \
     chown -R analyzer:analyzer /app
@@ -50,4 +64,5 @@ USER analyzer
 HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
     CMD python -c "import laion_clap; print('OK')" || exit 1
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["python", "analyzer.py"]

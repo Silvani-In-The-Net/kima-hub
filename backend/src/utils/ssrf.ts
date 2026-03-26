@@ -17,6 +17,10 @@ const BLOCKED_PREFIXES = [
   "::ffff:169.254.", // IPv4-mapped link-local
 ];
 
+const ALLOWED_HOSTS = process.env.SSRF_ALLOWED_HOSTS
+  ? process.env.SSRF_ALLOWED_HOSTS.split(",").map((h) => h.trim())
+  : [];
+
 function isBlockedIp(ip: string): boolean {
   if (ip === "0.0.0.0" || ip === "::" || ip === "::1") return true;
   for (const prefix of BLOCKED_PREFIXES) {
@@ -58,6 +62,24 @@ export async function validateUrlForFetch(url: string): Promise<string | null> {
 
   try {
     const { address } = await lookup(hostname);
+
+    // Check against allowed hosts whitelist first
+    if (ALLOWED_HOSTS.length > 0) {
+      const isAllowed = ALLOWED_HOSTS.some((allowed) => {
+        const trimmed = allowed.trim();
+        return (
+          trimmed === hostname ||
+          trimmed === address ||
+          (trimmed.endsWith(".") && hostname.startsWith(trimmed.slice(0, -1)))
+        );
+      });
+
+      if (isAllowed) {
+        logger.debug(`[SSRF] Allowed fetch to ${hostname} (matches SSRF_ALLOWED_HOSTS)`);
+        return null;
+      }
+    }
+
     if (isBlockedIp(address)) {
       logger.warn(`[SSRF] Blocked fetch to ${hostname} (resolved to ${address})`);
       return `Blocked: internal address`;

@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
     procps \
+    intel-opencl-icd \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
@@ -34,6 +35,10 @@ WORKDIR /app
 
 # Install essentia-tensorflow (includes TensorFlow + MusiCNN support)
 RUN pip3 install --no-cache-dir essentia-tensorflow
+
+# Enable Intel GPU acceleration via oneDNN/Level Zero (if available at runtime)
+ENV TF_ENABLE_ONEDNN_OPTS=1 \
+    ONEAPI_DEVICE_SELECTOR="level_zero:0"
 
 # Verify TensorflowPredictMusiCNN is available
 RUN python3 -c "from essentia.standard import TensorflowPredictMusiCNN, TensorflowPredict2D; print('MusiCNN and TensorflowPredict2D: OK')"

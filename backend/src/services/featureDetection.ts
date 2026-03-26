@@ -7,6 +7,15 @@ import { logger } from "../utils/logger";
 const ESSENTIA_ANALYZER_PATH = "/app/audio-analyzer/analyzer.py";
 const CLAP_ANALYZER_PATH = "/app/audio-analyzer-clap/analyzer.py";
 
+export interface GpuStatus {
+    available: boolean;
+    type?: 'nvidia' | 'intel' | 'cpu';
+    name?: string;
+    memoryGb?: number;
+    backend?: string;
+    warning?: string;
+}
+
 export interface AvailableFeatures {
     musicCNN: boolean;
     vibeEmbeddings: boolean;
@@ -106,6 +115,84 @@ class FeatureDetectionService {
         } catch (error) {
             logger.error("[FEATURE-DETECTION] Error checking Audiobookshelf:", error);
             return false;
+        }
+    }
+
+    async getGpuStatus(): Promise<GpuStatus> {
+        try {
+            // Check audio-analyzer service logs for GPU detection
+            const analyzerLog = await this.getServiceLogs('audio-analyzer', 50);
+            const clapLog = await this.getServiceLogs('audio-analyzer-clap', 50);
+
+            let gpuType: 'nvidia' | 'intel' | 'cpu' = 'cpu';
+            let backend = 'CPU (default)';
+            let name: string | undefined;
+            let memoryGb: number | undefined;
+            let warning: string | undefined;
+
+            // Check for NVIDIA CUDA detection
+            if (analyzerLog.includes('TensorFlow GPU detected') || clapLog.includes('CUDA available')) {
+                gpuType = 'nvidia';
+                backend = 'CUDA';
+                name = 'NVIDIA GPU';
+                memoryGb = 4; // Default estimate
+            }
+            // Check for Intel XPU/Level Zero detection
+            else if (clapLog.includes('Intel XPU') || clapLog.includes('torch.xpu')) {
+                gpuType = 'intel';
+                backend = 'XPU (oneDNN)';
+                name = 'Intel Arc GPU';
+                memoryGb = 3; // A380 has ~8GB shared, estimate 3 for ML
+            }
+            // Check for Intel oneDNN in analyzer logs
+            else if (analyzerLog.includes('oneDNN') || analyzerLog.includes('Level Zero')) {
+                gpuType = 'intel';
+                backend = 'oneDNN/Level Zero';
+                name = 'Intel GPU';
+                memoryGb = 3;
+            }
+            // Default CPU mode
+            else if (analyzerLog.includes('TensorFlow running on CPU') || clapLog.includes('on CPU')) {
+                gpuType = 'cpu';
+                backend = 'CPU';
+                warning = 'GPU acceleration not detected. Audio analysis will run slower.';
+            }
+
+            return {
+                available: gpuType !== 'cpu',
+                type: gpuType,
+                name,
+                memoryGb,
+                backend,
+                warning
+            };
+        } catch (error) {
+            logger.error('[FEATURE-DETECTION] GPU status error:', error);
+            // Return CPU as fallback
+            return {
+                available: false,
+                type: 'cpu',
+                name: 'CPU Only',
+                backend: 'CPU',
+                warning: 'GPU detection failed. Running on CPU.'
+            };
+        }
+    }
+
+    private async getServiceLogs(serviceName: string, lines: number = 50): Promise<string> {
+        try {
+            const { exec } = require('child_process');
+            return new Promise((resolve) => {
+                exec(`docker logs --tail ${lines} ${serviceName}`, (error, stdout, stderr) => {
+                    if (error) {
+                        resolve('');
+                    } else {
+                        resolve(stdout + stderr);
+                    }
+                });
+            });
+        } catch {
+            return '';
         }
     }
 
